@@ -88,12 +88,17 @@ jobs:
         run: |
           make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" all
 
+      - name: Test
+        run: |
+          make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" test
+
       - name: Package Artifacts
         run: |
           set -euo pipefail
           ARTIFACT_NAME="bzip2-${{ matrix.platform }}-${{ matrix.process-mode }}"
           DIST_DIR="dist/${ARTIFACT_NAME}"
-          mkdir -p "${DIST_DIR}/lib" "${DIST_DIR}/include"
+          mkdir -p "${DIST_DIR}/bin" "${DIST_DIR}/lib" "${DIST_DIR}/include"
+          cp -f bzip2.elf "${DIST_DIR}/bin/" 2>/dev/null || true
           cp -f libbz2.a "${DIST_DIR}/lib/"
           cp -f bzlib.h "${DIST_DIR}/include/"
           tar -cjf "dist/${ARTIFACT_NAME}.tar.bz2" -C dist "${ARTIFACT_NAME}"

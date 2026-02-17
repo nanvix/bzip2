@@ -40,6 +40,8 @@ ifdef CONFIG_NANVIX
     $(info [INFO] Using Docker image $(NANVIX_DOCKER_IMAGE) (explicitly requested))
   endif
 
+  EXE=.elf
+
   ifdef CONFIG_NANVIX_DOCKER
     DOCKER_TOOLCHAIN_PATH := /opt/nanvix
     DOCKER_SYSROOT_PATH := /mnt/sysroot
@@ -54,29 +56,95 @@ ifdef CONFIG_NANVIX
       $(NANVIX_DOCKER_IMAGE)
     CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
     AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
+    NANVIX_LDFLAGS := -T$(DOCKER_SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack
+    NANVIX_LIBS := -Wl,--start-group
+    NANVIX_LIBS += $(DOCKER_SYSROOT_PATH)/lib/libposix.a
+    NANVIX_LIBS += $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libc.a
+    NANVIX_LIBS += $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libm.a
+    NANVIX_LIBS += -Wl,--end-group
   else
     CC := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc
     AR := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ar
+    NANVIX_LDFLAGS := -T$(NANVIX_HOME)/lib/user.ld -static -Wl,-z,noexecstack
+    NANVIX_LIBS := -Wl,--start-group
+    NANVIX_LIBS += $(NANVIX_HOME)/lib/libposix.a
+    NANVIX_LIBS += $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libc.a
+    NANVIX_LIBS += $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libm.a
+    NANVIX_LIBS += -Wl,--end-group
   endif
 else
   ifneq ($(MAKECMDGOALS),clean)
     $(error CONFIG_NANVIX must be set to 'y'. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix)
   endif
+  EXE=.elf
 endif
 
-CFLAGS = -O2 -Wall -D_FILE_OFFSET_BITS=64
+CFLAGS = -O2 -Wall -D_FILE_OFFSET_BITS=64 -DBZ_UNIX -DBZ_LCCWIN32=0
 ARFLAGS = rcs
 STATICLIB = libbz2.a
 
 OBJS = blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
 
-all: $(STATICLIB)
+# Test executable
+TEST_PROGS = bzip2$(EXE)
+
+# All targets
+PROGS = $(STATICLIB) $(TEST_PROGS)
+
+all: $(PROGS)
 
 $(STATICLIB): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
 
+# bzip2 executable
+bzip2$(EXE): bzip2.o $(STATICLIB)
+	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ bzip2.o -L. -lbz2 $(NANVIX_LIBS)
+
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+# Test target: run tests using nanvixd.elf
+# Note: bzip2 is invoked with file arguments (-k -f) instead of stdin/stdout
+# redirects because nanvixd.elf terminal mode does not support shell redirects.
+test: $(TEST_PROGS)
+	@echo "Running bzip2 tests on Nanvix..."
+	@echo "Test 1: Compress and decompress roundtrip (sample1, -1)..."
+	cp $(abspath tests/sample1.ref) /tmp/sample1.ref
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
+	cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
+	cmp /tmp/sample1_rt $(abspath tests/sample1.ref)
+	@echo "		*** bzip2 sample1 roundtrip test OK ***"
+	@echo "Test 2: Compress and decompress roundtrip (sample2, -2)..."
+	cp $(abspath tests/sample2.ref) /tmp/sample2.ref
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
+	cp /tmp/sample2.ref.bz2 /tmp/sample2_rt.bz2
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
+	cmp /tmp/sample2_rt $(abspath tests/sample2.ref)
+	@echo "		*** bzip2 sample2 roundtrip test OK ***"
+	@echo "Test 3: Compress and decompress roundtrip (sample3, -3)..."
+	cp $(abspath tests/sample3.ref) /tmp/sample3.ref
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
+	cp /tmp/sample3.ref.bz2 /tmp/sample3_rt.bz2
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
+	cmp /tmp/sample3_rt $(abspath tests/sample3.ref)
+	@echo "		*** bzip2 sample3 roundtrip test OK ***"
+	@echo "Test 4: Decompress reference file (sample1.bz2)..."
+	cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
+	cmp /tmp/sample1_ref $(abspath tests/sample1.ref)
+	@echo "		*** bzip2 sample1 decompress test OK ***"
+	@echo "Test 5: Decompress reference file (sample2.bz2)..."
+	cp $(abspath tests/sample2.bz2) /tmp/sample2_ref.bz2
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
+	cmp /tmp/sample2_ref $(abspath tests/sample2.ref)
+	@echo "		*** bzip2 sample2 decompress test OK ***"
+	@echo "Test 6: Decompress reference file (sample3.bz2)..."
+	cp $(abspath tests/sample3.bz2) /tmp/sample3_ref.bz2
+	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
+	cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
+	@echo "		*** bzip2 sample3 decompress test OK ***"
+	@echo "All bzip2 tests passed."
 
 install: $(STATICLIB)
 	mkdir -p "$(DESTDIR)$(PREFIX)/lib"
@@ -85,6 +153,7 @@ install: $(STATICLIB)
 	install -m644 bzlib.h "$(DESTDIR)$(PREFIX)/include/"
 
 clean:
-	rm -f *.o $(STATICLIB)
+	rm -f *.o $(PROGS)
+	rm -f *.a *.elf
 
-.PHONY: all clean install
+.PHONY: all clean test install
