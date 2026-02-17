@@ -176,6 +176,19 @@ jobs:
             --latest \
             release-assets/*.tar.bz2
 
+      - name: Trigger Dependent Workflows
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
+        run: |
+          echo "Triggering cpython workflow..."
+          gh api repos/nanvix/cpython/dispatches \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -f event_type="bzip2-release" \
+            -f "client_payload[nanvix_sha]=${NANVIX_SHA}" \
+            -f "client_payload[bzip2_tag]=${GITHUB_SHA::7}-nanvix-${NANVIX_SHA}" || echo "::warning::Failed to trigger cpython workflow"
+
   report-failure:
     needs: [build]
     if: >-
