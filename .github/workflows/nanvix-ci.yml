@@ -86,22 +86,31 @@ jobs:
 
       - name: Build
         run: |
-          make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" all
+          make -f Makefile.nanvix CONFIG_NANVIX=y \
+            NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" all
 
-      - name: Test
+      - name: Smoke Tests
         run: |
-          make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" test
+          make -f Makefile.nanvix CONFIG_NANVIX=y \
+            NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" test-smoke
 
-      - name: Package Artifacts
+      - name: Integration Tests
         run: |
-          set -euo pipefail
+          make -f Makefile.nanvix CONFIG_NANVIX=y \
+            NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" test-integration
+
+      - name: Functional Tests
+        run: |
+          make -f Makefile.nanvix CONFIG_NANVIX=y \
+            NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" test-functional
+
+      - name: Package
+        run: |
+          make -f Makefile.nanvix CONFIG_NANVIX=y \
+            NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" \
+            PLATFORM="${{ matrix.platform }}" PROCESS_MODE="${{ matrix.process-mode }}" \
+            package
           ARTIFACT_NAME="bzip2-${{ matrix.platform }}-${{ matrix.process-mode }}"
-          DIST_DIR="dist/${ARTIFACT_NAME}"
-          mkdir -p "${DIST_DIR}/bin" "${DIST_DIR}/lib" "${DIST_DIR}/include"
-          cp -f bzip2.elf "${DIST_DIR}/bin/" 2>/dev/null || true
-          cp -f libbz2.a "${DIST_DIR}/lib/"
-          cp -f bzlib.h "${DIST_DIR}/include/"
-          tar -cjf "dist/${ARTIFACT_NAME}.tar.bz2" -C dist "${ARTIFACT_NAME}"
           echo "ARTIFACT_TARBALL=dist/${ARTIFACT_NAME}.tar.bz2" >> "$GITHUB_ENV"
 
       - name: Upload Build Artifacts
@@ -171,12 +180,18 @@ jobs:
           - Published: ${NANVIX_PUBLISHED}
           - Commit: [${NANVIX_SHA_FULL}](https://github.com/nanvix/nanvix/commit/${NANVIX_SHA_FULL})
 
-          **Dependencies:**
-          - None (standalone library)" \
+          **Package Layout:**
+          \`\`\`
+          sysroot/
+            lib/libbz2.a
+            include/bzlib.h
+            bin/bzip2.elf
+          \`\`\`
+
+          **Dependencies:** None (standalone library)" \
             --latest \
             release-assets/*.tar.bz2
 
-      # Trigger dependent workflows (cpython depends on bzip2)
       - name: Trigger Dependent Workflows
         if: success()
         env:

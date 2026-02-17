@@ -4,9 +4,22 @@
 # Licensed under the MIT License.
 #
 # Usage:
-#   make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix all
+#   make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/sysroot all
+#
+# Targets:
+#   all              Build static library
+#   test-smoke       Verify build artifacts exist and are valid (no runtime)
+#   test-integration Build and link bzip2 executable against library
+#   test-functional  Run compress/decompress roundtrip on nanvixd.elf (requires KVM)
+#   test             Run all test levels
+#   package          Create portable release tarball in dist/
+#   install          Install library and headers to PREFIX
+#   clean            Remove build artifacts
 
-# Nanvix Docker image for cross-compilation
+# ===========================================================================
+# Toolchain Detection
+# ===========================================================================
+
 NANVIX_DOCKER_IMAGE ?= nanvix/toolchain:latest-minimal
 
 ifdef CONFIG_NANVIX
@@ -20,12 +33,12 @@ ifdef CONFIG_NANVIX
         DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
         ifdef DOCKER_IMAGE_EXISTS
           CONFIG_NANVIX_DOCKER := y
-          $(info [INFO] Native toolchain not found at $(NANVIX_TOOLCHAIN), using Docker image $(NANVIX_DOCKER_IMAGE))
+          $(info [nanvix] Using Docker (native toolchain not found at $(NANVIX_TOOLCHAIN)))
         else
           $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
         endif
       else
-        $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN) and Docker is not available)
+        $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN) and Docker not available)
       endif
     endif
   else
@@ -37,10 +50,11 @@ ifdef CONFIG_NANVIX
     ifndef DOCKER_IMAGE_EXISTS
       $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
     endif
-    $(info [INFO] Using Docker image $(NANVIX_DOCKER_IMAGE) (explicitly requested))
+    $(info [nanvix] Using Docker (explicitly requested))
   endif
 
-  EXE=.elf
+  EXE = .elf
+  SYSROOT_PATH := $(abspath $(NANVIX_HOME))
 
   ifdef CONFIG_NANVIX_DOCKER
     DOCKER_TOOLCHAIN_PATH := /opt/nanvix
@@ -50,101 +64,179 @@ ifdef CONFIG_NANVIX
     DOCKER_GID := $(shell id -g)
     DOCKER_RUN := docker run --rm --user $(DOCKER_UID):$(DOCKER_GID) \
       -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
-      -v $(NANVIX_HOME):$(DOCKER_SYSROOT_PATH):ro \
+      -v $(SYSROOT_PATH):$(DOCKER_SYSROOT_PATH):ro \
       -w $(DOCKER_WORKSPACE_PATH) \
+      -e HOME=/tmp \
+      $(NANVIX_DOCKER_IMAGE)
+    DOCKER_RUN_FUNCTIONAL := docker run --rm --device /dev/kvm \
+      -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
+      -v $(SYSROOT_PATH):$(DOCKER_SYSROOT_PATH) \
+      -w $(DOCKER_SYSROOT_PATH) \
       -e HOME=/tmp \
       $(NANVIX_DOCKER_IMAGE)
     CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
     AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
     NANVIX_LDFLAGS := -T$(DOCKER_SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack
-    NANVIX_LIBS := -Wl,--start-group
-    NANVIX_LIBS += $(DOCKER_SYSROOT_PATH)/lib/libposix.a
-    NANVIX_LIBS += $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libc.a
-    NANVIX_LIBS += $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libm.a
-    NANVIX_LIBS += -Wl,--end-group
+    NANVIX_LIBS := -Wl,--start-group \
+      $(DOCKER_SYSROOT_PATH)/lib/libposix.a \
+      $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libc.a \
+      $(DOCKER_TOOLCHAIN_PATH)/i686-nanvix/lib/libm.a \
+      -Wl,--end-group
   else
     CC := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc
     AR := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ar
-    NANVIX_LDFLAGS := -T$(NANVIX_HOME)/lib/user.ld -static -Wl,-z,noexecstack
-    NANVIX_LIBS := -Wl,--start-group
-    NANVIX_LIBS += $(NANVIX_HOME)/lib/libposix.a
-    NANVIX_LIBS += $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libc.a
-    NANVIX_LIBS += $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libm.a
-    NANVIX_LIBS += -Wl,--end-group
+    NANVIX_LDFLAGS := -T$(SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack
+    NANVIX_LIBS := -Wl,--start-group \
+      $(SYSROOT_PATH)/lib/libposix.a \
+      $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libc.a \
+      $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libm.a \
+      -Wl,--end-group
   endif
 else
   ifneq ($(MAKECMDGOALS),clean)
-    $(error CONFIG_NANVIX must be set to 'y'. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix)
+    $(error CONFIG_NANVIX must be set to 'y'. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/sysroot)
   endif
-  EXE=.elf
+  EXE = .elf
 endif
+
+# ===========================================================================
+# Build Configuration
+# ===========================================================================
 
 CFLAGS = -O2 -Wall -D_FILE_OFFSET_BITS=64 -DBZ_UNIX -DBZ_LCCWIN32=0
 ARFLAGS = rcs
+
+PREFIX ?= $(SYSROOT_PATH)
+PLATFORM ?= unknown
+PROCESS_MODE ?= unknown
+
 STATICLIB = libbz2.a
-
 OBJS = blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
-
-# Test executable
 TEST_PROGS = bzip2$(EXE)
 
-# All targets
-PROGS = $(STATICLIB) $(TEST_PROGS)
+# ===========================================================================
+# Build Targets
+# ===========================================================================
 
-all: $(PROGS)
+all: $(STATICLIB)
 
 $(STATICLIB): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
 
-# bzip2 executable
 bzip2$(EXE): bzip2.o $(STATICLIB)
 	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ bzip2.o -L. -lbz2 $(NANVIX_LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-# Test target: run tests using nanvixd.elf
-# Note: bzip2 is invoked with file arguments (-k -f) instead of stdin/stdout
-# redirects because nanvixd.elf terminal mode does not support shell redirects.
-test: $(TEST_PROGS)
-	@echo "Running bzip2 tests on Nanvix..."
-	@echo "Test 1: Compress and decompress roundtrip (sample1, -1)..."
-	cp $(abspath tests/sample1.ref) /tmp/sample1.ref
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
-	cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
-	cmp /tmp/sample1_rt $(abspath tests/sample1.ref)
-	@echo "		*** bzip2 sample1 roundtrip test OK ***"
-	@echo "Test 2: Compress and decompress roundtrip (sample2, -2)..."
-	cp $(abspath tests/sample2.ref) /tmp/sample2.ref
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
-	cp /tmp/sample2.ref.bz2 /tmp/sample2_rt.bz2
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
-	cmp /tmp/sample2_rt $(abspath tests/sample2.ref)
-	@echo "		*** bzip2 sample2 roundtrip test OK ***"
-	@echo "Test 3: Compress and decompress roundtrip (sample3, -3)..."
-	cp $(abspath tests/sample3.ref) /tmp/sample3.ref
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
-	cp /tmp/sample3.ref.bz2 /tmp/sample3_rt.bz2
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
-	cmp /tmp/sample3_rt $(abspath tests/sample3.ref)
-	@echo "		*** bzip2 sample3 roundtrip test OK ***"
-	@echo "Test 4: Decompress reference file (sample1.bz2)..."
-	cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
-	cmp /tmp/sample1_ref $(abspath tests/sample1.ref)
-	@echo "		*** bzip2 sample1 decompress test OK ***"
-	@echo "Test 5: Decompress reference file (sample2.bz2)..."
-	cp $(abspath tests/sample2.bz2) /tmp/sample2_ref.bz2
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
-	cmp /tmp/sample2_ref $(abspath tests/sample2.ref)
-	@echo "		*** bzip2 sample2 decompress test OK ***"
-	@echo "Test 6: Decompress reference file (sample3.bz2)..."
-	cp $(abspath tests/sample3.bz2) /tmp/sample3_ref.bz2
-	cd "$(NANVIX_HOME)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
-	cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
-	@echo "		*** bzip2 sample3 decompress test OK ***"
-	@echo "All bzip2 tests passed."
+# ===========================================================================
+# Test Targets
+# ===========================================================================
+
+# --- Smoke tests: verify build artifacts (no runtime needed) ---
+test-smoke: $(STATICLIB)
+	@echo "=== bzip2 smoke tests ==="
+	@echo "  Checking libbz2.a..."
+	@test -f $(STATICLIB) || { echo "  FAIL: $(STATICLIB) not found"; exit 1; }
+	@size=$$(wc -c < $(STATICLIB)); \
+	if [ "$$size" -lt 1000 ]; then echo "  FAIL: $(STATICLIB) too small ($$size bytes)"; exit 1; fi
+	@echo "  Checking headers..."
+	@test -f bzlib.h || { echo "  FAIL: bzlib.h not found"; exit 1; }
+	@echo "  PASS: bzip2 smoke tests"
+
+# --- Integration tests: build and link bzip2 executable ---
+test-integration: $(TEST_PROGS)
+	@echo "=== bzip2 integration tests ==="
+	@test -f bzip2$(EXE) || { echo "  FAIL: bzip2$(EXE) not built"; exit 1; }
+	@echo "  OK: bzip2$(EXE) ($$(wc -c < bzip2$(EXE)) bytes)"
+	@echo "  PASS: bzip2 integration tests"
+
+# --- Functional tests: compress/decompress roundtrip on nanvixd.elf ---
+test-functional: test-integration
+	@echo "=== bzip2 functional tests ==="
+ifdef CONFIG_NANVIX_DOCKER
+	@echo "  Running roundtrip tests via nanvixd.elf (Docker)..."
+	@cp $(abspath tests/sample1.ref) /tmp/sample1.ref
+	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
+	  timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -1 -k -f /tmp/sample1.ref && \
+	  cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2 && \
+	  timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -d -k -f /tmp/sample1_rt.bz2 && \
+	  cmp /tmp/sample1_rt $(DOCKER_WORKSPACE_PATH)/tests/sample1.ref && \
+	  echo "  PASS: sample1 roundtrip" || \
+	  { echo "  FAIL: sample1 roundtrip"; exit 1; }'
+	@echo "  Running decompress reference test (Docker)..."
+	@cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
+	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
+	  timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2 && \
+	  cmp /tmp/sample1_ref $(DOCKER_WORKSPACE_PATH)/tests/sample1.ref && \
+	  echo "  PASS: sample1 decompress" || \
+	  { echo "  FAIL: sample1 decompress"; exit 1; }'
+else
+	@echo "  Test 1: Compress/decompress roundtrip (sample1, -1)..."
+	@cp $(abspath tests/sample1.ref) /tmp/sample1.ref
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
+	@cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
+	@cmp /tmp/sample1_rt $(abspath tests/sample1.ref)
+	@echo "  PASS: sample1 roundtrip"
+	@echo "  Test 2: Compress/decompress roundtrip (sample2, -2)..."
+	@cp $(abspath tests/sample2.ref) /tmp/sample2.ref
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
+	@cp /tmp/sample2.ref.bz2 /tmp/sample2_rt.bz2
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
+	@cmp /tmp/sample2_rt $(abspath tests/sample2.ref)
+	@echo "  PASS: sample2 roundtrip"
+	@echo "  Test 3: Compress/decompress roundtrip (sample3, -3)..."
+	@cp $(abspath tests/sample3.ref) /tmp/sample3.ref
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
+	@cp /tmp/sample3.ref.bz2 /tmp/sample3_rt.bz2
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
+	@cmp /tmp/sample3_rt $(abspath tests/sample3.ref)
+	@echo "  PASS: sample3 roundtrip"
+	@echo "  Test 4: Decompress reference (sample1.bz2)..."
+	@cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
+	@cmp /tmp/sample1_ref $(abspath tests/sample1.ref)
+	@echo "  PASS: sample1 decompress reference"
+	@echo "  Test 5: Decompress reference (sample2.bz2)..."
+	@cp $(abspath tests/sample2.bz2) /tmp/sample2_ref.bz2
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
+	@cmp /tmp/sample2_ref $(abspath tests/sample2.ref)
+	@echo "  PASS: sample2 decompress reference"
+	@echo "  Test 6: Decompress reference (sample3.bz2)..."
+	@cp $(abspath tests/sample3.bz2) /tmp/sample3_ref.bz2
+	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
+	@cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
+	@echo "  PASS: sample3 decompress reference"
+endif
+	@echo "  PASS: bzip2 functional tests"
+
+# --- Run all test levels ---
+test: test-smoke test-integration test-functional
+	@echo "=== All bzip2 tests PASSED ==="
+
+# ===========================================================================
+# Package Target
+# ===========================================================================
+
+package: all
+	@echo "=== Packaging bzip2 release ==="
+	$(eval ARTIFACT_NAME := bzip2-$(PLATFORM)-$(PROCESS_MODE))
+	rm -rf dist/$(ARTIFACT_NAME)
+	mkdir -p dist/$(ARTIFACT_NAME)/sysroot/lib \
+	dist/$(ARTIFACT_NAME)/sysroot/include \
+	dist/$(ARTIFACT_NAME)/sysroot/bin
+	cp -f $(STATICLIB) dist/$(ARTIFACT_NAME)/sysroot/lib/
+	cp -f bzlib.h dist/$(ARTIFACT_NAME)/sysroot/include/
+	-cp -f $(TEST_PROGS) dist/$(ARTIFACT_NAME)/sysroot/bin/ 2>/dev/null || true
+	tar -cjf dist/$(ARTIFACT_NAME).tar.bz2 -C dist/$(ARTIFACT_NAME) sysroot
+	@echo "  Package: dist/$(ARTIFACT_NAME).tar.bz2"
+	@echo "  Contents:"
+	@tar tjf dist/$(ARTIFACT_NAME).tar.bz2 | head -20
+
+# ===========================================================================
+# Install / Clean
+# ===========================================================================
 
 install: $(STATICLIB)
 	mkdir -p "$(DESTDIR)$(PREFIX)/lib"
@@ -153,7 +245,8 @@ install: $(STATICLIB)
 	install -m644 bzlib.h "$(DESTDIR)$(PREFIX)/include/"
 
 clean:
-	rm -f *.o $(PROGS)
+	rm -f *.o $(STATICLIB) $(TEST_PROGS)
 	rm -f *.a *.elf
+	rm -rf dist/
 
-.PHONY: all clean test install
+.PHONY: all clean test test-smoke test-integration test-functional package install
