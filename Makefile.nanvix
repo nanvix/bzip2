@@ -1,0 +1,90 @@
+# Makefile.nanvix - bzip2 cross-compilation for Nanvix
+#
+# Copyright(c) The Maintainers of Nanvix.
+# Licensed under the MIT License.
+#
+# Usage:
+#   make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix all
+
+# Nanvix Docker image for cross-compilation
+NANVIX_DOCKER_IMAGE ?= nanvix/toolchain:latest-minimal
+
+ifdef CONFIG_NANVIX
+  NANVIX_TOOLCHAIN ?= /opt/nanvix
+  NANVIX_HOME ?= $(HOME)/nanvix
+
+  ifndef CONFIG_NANVIX_DOCKER
+    ifeq ($(wildcard $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc),)
+      DOCKER_AVAILABLE := $(shell command -v docker 2>/dev/null)
+      ifdef DOCKER_AVAILABLE
+        DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
+        ifdef DOCKER_IMAGE_EXISTS
+          CONFIG_NANVIX_DOCKER := y
+          $(info [INFO] Native toolchain not found at $(NANVIX_TOOLCHAIN), using Docker image $(NANVIX_DOCKER_IMAGE))
+        else
+          $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
+        endif
+      else
+        $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN) and Docker is not available)
+      endif
+    endif
+  else
+    DOCKER_AVAILABLE := $(shell command -v docker 2>/dev/null)
+    ifndef DOCKER_AVAILABLE
+      $(error CONFIG_NANVIX_DOCKER=y but Docker is not installed)
+    endif
+    DOCKER_IMAGE_EXISTS := $(shell docker image inspect $(NANVIX_DOCKER_IMAGE) >/dev/null 2>&1 && echo yes)
+    ifndef DOCKER_IMAGE_EXISTS
+      $(error Docker image $(NANVIX_DOCKER_IMAGE) not found. Run: docker pull $(NANVIX_DOCKER_IMAGE))
+    endif
+    $(info [INFO] Using Docker image $(NANVIX_DOCKER_IMAGE) (explicitly requested))
+  endif
+
+  ifdef CONFIG_NANVIX_DOCKER
+    DOCKER_TOOLCHAIN_PATH := /opt/nanvix
+    DOCKER_SYSROOT_PATH := /mnt/sysroot
+    DOCKER_WORKSPACE_PATH := /mnt/workspace
+    DOCKER_UID := $(shell id -u)
+    DOCKER_GID := $(shell id -g)
+    DOCKER_RUN := docker run --rm --user $(DOCKER_UID):$(DOCKER_GID) \
+      -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
+      -v $(NANVIX_HOME):$(DOCKER_SYSROOT_PATH):ro \
+      -w $(DOCKER_WORKSPACE_PATH) \
+      -e HOME=/tmp \
+      $(NANVIX_DOCKER_IMAGE)
+    CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
+    AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
+  else
+    CC := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc
+    AR := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ar
+  endif
+else
+  ifneq ($(MAKECMDGOALS),clean)
+    $(error CONFIG_NANVIX must be set to 'y'. Usage: make -f Makefile.nanvix CONFIG_NANVIX=y NANVIX_HOME=/path/to/nanvix)
+  endif
+endif
+
+CFLAGS = -O2 -Wall -D_FILE_OFFSET_BITS=64
+ARFLAGS = rcs
+STATICLIB = libbz2.a
+
+OBJS = blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
+
+all: $(STATICLIB)
+
+$(STATICLIB): $(OBJS)
+	$(AR) $(ARFLAGS) $@ $(OBJS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+install: $(STATICLIB)
+	mkdir -p "$(DESTDIR)$(PREFIX)/lib"
+	mkdir -p "$(DESTDIR)$(PREFIX)/include"
+	install -m644 $(STATICLIB) "$(DESTDIR)$(PREFIX)/lib/"
+	install -m644 bzlib.h "$(DESTDIR)$(PREFIX)/include/"
+
+clean:
+	rm -f *.o $(STATICLIB)
+
+.PHONY: all clean install

@@ -27,3 +27,4 @@ builddir
 *.lib
 *.obj
 *.res
+*.o
