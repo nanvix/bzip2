@@ -68,11 +68,14 @@ ifdef CONFIG_NANVIX
       -w $(DOCKER_WORKSPACE_PATH) \
       -e HOME=/tmp \
       $(NANVIX_DOCKER_IMAGE)
+    DOCKER_KVM_GID := $(shell stat -c '%g' /dev/kvm 2>/dev/null || echo 0)
     DOCKER_RUN_FUNCTIONAL := docker run --rm --device /dev/kvm \
+      --user $(DOCKER_UID):$(DOCKER_GID) --group-add $(DOCKER_KVM_GID) \
       -v $(CURDIR):$(DOCKER_WORKSPACE_PATH) \
       -v $(SYSROOT_PATH):$(DOCKER_SYSROOT_PATH) \
       -w $(DOCKER_SYSROOT_PATH) \
       -e HOME=/tmp \
+      -e USER=$(shell whoami) \
       $(NANVIX_DOCKER_IMAGE)
     CC := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-gcc
     AR := $(DOCKER_RUN) $(DOCKER_TOOLCHAIN_PATH)/bin/i686-nanvix-ar
@@ -156,56 +159,56 @@ test-functional: test-integration
 	@echo "=== bzip2 functional tests ==="
 ifdef CONFIG_NANVIX_DOCKER
 	@echo "  Running roundtrip tests via nanvixd.elf (Docker)..."
-	@cp $(abspath tests/sample1.ref) /tmp/sample1.ref
 	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
-	  timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -1 -k -f /tmp/sample1.ref && \
+	  cp $(DOCKER_WORKSPACE_PATH)/tests/sample1.ref /tmp/sample1.ref && \
+	  timeout --foreground 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -1 -k -f /tmp/sample1.ref && \
 	  cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2 && \
-	  timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -d -k -f /tmp/sample1_rt.bz2 && \
+	  timeout --foreground 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -d -k -f /tmp/sample1_rt.bz2 && \
 	  cmp /tmp/sample1_rt $(DOCKER_WORKSPACE_PATH)/tests/sample1.ref && \
 	  echo "  PASS: sample1 roundtrip" || \
 	  { echo "  FAIL: sample1 roundtrip"; exit 1; }'
 	@echo "  Running decompress reference test (Docker)..."
-	@cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
 	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
-	  timeout 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2 && \
+	  cp $(DOCKER_WORKSPACE_PATH)/tests/sample1.bz2 /tmp/sample1_ref.bz2 && \
+	  timeout --foreground 120 ./bin/nanvixd.elf -- $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2 && \
 	  cmp /tmp/sample1_ref $(DOCKER_WORKSPACE_PATH)/tests/sample1.ref && \
 	  echo "  PASS: sample1 decompress" || \
 	  { echo "  FAIL: sample1 decompress"; exit 1; }'
 else
 	@echo "  Test 1: Compress/decompress roundtrip (sample1, -1)..."
 	@cp $(abspath tests/sample1.ref) /tmp/sample1.ref
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
 	@cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
 	@cmp /tmp/sample1_rt $(abspath tests/sample1.ref)
 	@echo "  PASS: sample1 roundtrip"
 	@echo "  Test 2: Compress/decompress roundtrip (sample2, -2)..."
 	@cp $(abspath tests/sample2.ref) /tmp/sample2.ref
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
 	@cp /tmp/sample2.ref.bz2 /tmp/sample2_rt.bz2
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
 	@cmp /tmp/sample2_rt $(abspath tests/sample2.ref)
 	@echo "  PASS: sample2 roundtrip"
 	@echo "  Test 3: Compress/decompress roundtrip (sample3, -3)..."
 	@cp $(abspath tests/sample3.ref) /tmp/sample3.ref
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
 	@cp /tmp/sample3.ref.bz2 /tmp/sample3_rt.bz2
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
 	@cmp /tmp/sample3_rt $(abspath tests/sample3.ref)
 	@echo "  PASS: sample3 roundtrip"
 	@echo "  Test 4: Decompress reference (sample1.bz2)..."
 	@cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
 	@cmp /tmp/sample1_ref $(abspath tests/sample1.ref)
 	@echo "  PASS: sample1 decompress reference"
 	@echo "  Test 5: Decompress reference (sample2.bz2)..."
 	@cp $(abspath tests/sample2.bz2) /tmp/sample2_ref.bz2
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
 	@cmp /tmp/sample2_ref $(abspath tests/sample2.ref)
 	@echo "  PASS: sample2 decompress reference"
 	@echo "  Test 6: Decompress reference (sample3.bz2)..."
 	@cp $(abspath tests/sample3.bz2) /tmp/sample3_ref.bz2
-	@cd "$(SYSROOT_PATH)" && ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
+	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
 	@cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
 	@echo "  PASS: sample3 decompress reference"
 endif
