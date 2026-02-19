@@ -116,18 +116,10 @@ jobs:
 
       - name: Verify Package
         run: |
-          set -euo pipefail
-          TARBALL="dist/bzip2-${{ matrix.platform }}-${{ matrix.process-mode }}.tar.bz2"
-          if [[ ! -f "$TARBALL" ]]; then
-            echo "::error::Package tarball not found: $TARBALL"
-            exit 1
-          fi
-          echo "Package contents:"
-          tar tjf "$TARBALL"
-          if ! (set +o pipefail; tar tjf "$TARBALL" | grep -q 'sysroot/lib/'); then
-            echo "::error::Package missing sysroot/lib/ entries"
-            exit 1
-          fi
+          make -f Makefile.nanvix CONFIG_NANVIX=y \
+            NANVIX_HOME="$NANVIX_HOME" NANVIX_TOOLCHAIN="/opt/nanvix" \
+            PLATFORM="${{ matrix.platform }}" PROCESS_MODE="${{ matrix.process-mode }}" \
+            verify-package
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
