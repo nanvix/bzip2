@@ -157,6 +157,52 @@ test-integration: $(TEST_PROGS)
 # --- Functional tests: compress/decompress roundtrip on nanvixd.elf ---
 test-functional: test-integration
 	@echo "=== bzip2 functional tests ==="
+ifeq ($(PROCESS_MODE),standalone)
+ifdef CONFIG_NANVIX_DOCKER
+	@echo "  Running standalone compress test via nanvixd.elf (Docker)..."
+	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
+	  mkdir -p /tmp/nanvix-ramfs/tmp && \
+	  cp $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) /tmp/nanvix-ramfs/ && \
+	  cp $(DOCKER_WORKSPACE_PATH)/tests/sample1.ref /tmp/nanvix-ramfs/tmp/sample1.ref && \
+	  ./bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && \
+	  timeout --foreground 120 ./bin/nanvixd.elf \
+	    -bin-dir ./bin -ramfs /tmp/rootfs.img \
+	    -- ./bzip2$(EXE) -1 -k -f /tmp/sample1.ref && \
+	  echo "  PASS: sample1 compress standalone" || \
+	  { echo "  FAIL: sample1 compress standalone"; exit 1; }'
+	@echo "  Running standalone decompress test via nanvixd.elf (Docker)..."
+	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
+	  mkdir -p /tmp/nanvix-ramfs/tmp && \
+	  cp $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) /tmp/nanvix-ramfs/ && \
+	  cp $(DOCKER_WORKSPACE_PATH)/tests/sample1.bz2 /tmp/nanvix-ramfs/tmp/sample1_ref.bz2 && \
+	  ./bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && \
+	  timeout --foreground 120 ./bin/nanvixd.elf \
+	    -bin-dir ./bin -ramfs /tmp/rootfs.img \
+	    -- ./bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2 && \
+	  echo "  PASS: sample1 decompress standalone" || \
+	  { echo "  FAIL: sample1 decompress standalone"; exit 1; }'
+else
+	@echo "  Test 1: Standalone compress (sample1, -1)..."
+	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs/tmp
+	@cp $(abspath bzip2$(EXE)) /tmp/nanvix-ramfs/
+	@cp $(abspath tests/sample1.ref) /tmp/nanvix-ramfs/tmp/sample1.ref
+	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
+	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
+	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
+	  -- ./bzip2$(EXE) -1 -k -f /tmp/sample1.ref
+	@echo "  PASS: sample1 compress standalone"
+	@echo "  Test 2: Standalone decompress reference (sample1.bz2)..."
+	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs/tmp
+	@cp $(abspath bzip2$(EXE)) /tmp/nanvix-ramfs/
+	@cp $(abspath tests/sample1.bz2) /tmp/nanvix-ramfs/tmp/sample1_ref.bz2
+	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
+	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
+	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
+	  -- ./bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2
+	@rm -rf /tmp/nanvix-ramfs /tmp/rootfs.img
+	@echo "  PASS: sample1 decompress standalone"
+endif
+else
 ifdef CONFIG_NANVIX_DOCKER
 	@echo "  Running roundtrip tests via nanvixd.elf (Docker)..."
 	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
@@ -211,6 +257,7 @@ else
 	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
 	@cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
 	@echo "  PASS: sample3 decompress reference"
+endif
 endif
 	@echo "  PASS: bzip2 functional tests"
 
