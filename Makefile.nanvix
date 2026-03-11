@@ -112,6 +112,7 @@ ARFLAGS = rcs
 PREFIX ?= $(SYSROOT_PATH)
 PLATFORM ?= unknown
 PROCESS_MODE ?= unknown
+MEMORY_SIZE ?= unknown
 
 STATICLIB = libbz2.a
 OBJS = blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
@@ -271,7 +272,7 @@ test: test-smoke test-integration test-functional
 
 package: all
 	@echo "=== Packaging bzip2 release ==="
-	$(eval ARTIFACT_NAME := bzip2-$(PLATFORM)-$(PROCESS_MODE))
+	$(eval ARTIFACT_NAME := bzip2-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
 	rm -rf dist/$(ARTIFACT_NAME)
 	mkdir -p dist/$(ARTIFACT_NAME)/sysroot/lib \
 	dist/$(ARTIFACT_NAME)/sysroot/include \
@@ -290,7 +291,7 @@ package: all
 
 verify-package:
 	@echo "=== Verifying bzip2 package ==="
-	$(eval ARTIFACT_NAME := bzip2-$(PLATFORM)-$(PROCESS_MODE))
+	$(eval ARTIFACT_NAME := bzip2-$(PLATFORM)-$(PROCESS_MODE)-$(MEMORY_SIZE))
 	@TARBALL="dist/$(ARTIFACT_NAME).tar.bz2"; \
 	if [ ! -f "$$TARBALL" ]; then \
 	  echo "FAIL: Package tarball not found: $$TARBALL"; exit 1; \
