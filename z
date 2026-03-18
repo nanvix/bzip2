@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Bootstrap wrapper for Nanvix build scripts.
+# Modeled on https://github.com/rust-lang/rust/blob/main/x
+
+# Copyright(c) The Maintainers of Nanvix.
+# Licensed under the MIT License.
+
+set -euo pipefail
+
+# Minimum required Python version.
+MIN_PYTHON_MAJOR=3
+MIN_PYTHON_MINOR=12
+
+# Locate a suitable Python interpreter.
+find_python() {
+    local candidates=("python3" "python" "py")
+    for candidate in "${candidates[@]}"; do
+        if command -v "${candidate}" &>/dev/null; then
+            local version
+            version=$("${candidate}" -c \
+                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" \
+                2>/dev/null) || continue
+            local major minor
+            major=$(echo "${version}" | cut -d. -f1)
+            minor=$(echo "${version}" | cut -d. -f2)
+            if [[ "${major}" -gt "${MIN_PYTHON_MAJOR}" ]] || \
+               [[ "${major}" -eq "${MIN_PYTHON_MAJOR}" && "${minor}" -ge "${MIN_PYTHON_MINOR}" ]]; then
+                echo "${candidate}"
+                return 0
+            fi
+        fi
+    done
+    return 1
+}
+
+PYTHON=$(find_python) || {
+    echo "error: Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ not found in PATH." >&2
+    echo "hint:  Install Python 3.12+ and ensure it is on your PATH." >&2
+    exit 3
+}
+
+# Resolve the directory containing this script, following symlinks.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+Z_SCRIPT="${SCRIPT_DIR}/.nanvix/z.py"
+
+if [[ ! -f "${Z_SCRIPT}" ]]; then
+    echo "error: ${Z_SCRIPT} not found." >&2
+    echo "hint:  Create .nanvix/z.py with a ZScript subclass." >&2
+    exit 3
+fi
+
+exec "${PYTHON}" "${Z_SCRIPT}" "$@"

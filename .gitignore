@@ -28,3 +28,11 @@ builddir
 *.obj
 *.res
 *.o
+
+# nanvix build artifacts (z.py is tracked, everything else is generated)
+.nanvix/venv/
+.nanvix/env.json
+.nanvix/cache/
+.nanvix/sysroot/
+.nanvix/buildroot/
+.nanvix/__pycache__/
