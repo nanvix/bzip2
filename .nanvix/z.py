@@ -13,50 +13,45 @@ Usage (from repository root):
 
 # ── Self-bootstrap preamble (stdlib only) ─────────────────────────────
 # Creates .nanvix/venv, installs nanvix-zutil, and re-execs under the
-# venv interpreter.  Set NANVIX_ZUTIL_DEV to a local checkout of
+# venv interpreter.  Set NANVIX_ZUTIL_PATH to a local checkout of
 # nanvix/zutils for editable development (pip install -e).
+
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 _NANVIX_DIR = Path(__file__).resolve().parent
-_VENV_DIR = _NANVIX_DIR / "venv"
-_VENV_PYTHON = _VENV_DIR / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+_VENV = _NANVIX_DIR / "venv"
+_VENV_PYTHON = _VENV / ("Scripts" if os.name == "nt" else "bin") / "python"
 _ZUTIL_VERSION = "0.1.0"
+# TODO: Replace with actual GitHub release URL once available.
+_ZUTIL_RELEASE_URL = ""
 
-
-def _bootstrap() -> None:
-    """Create the venv and install nanvix-zutil if needed."""
-    if not _VENV_DIR.exists():
-        print(f"info: Creating virtual environment at {_VENV_DIR}", flush=True)
-        import venv
-
-        venv.create(str(_VENV_DIR), with_pip=True)
-
-    dev_path = os.environ.get("NANVIX_ZUTIL_DEV")
-    if dev_path:
-        subprocess.check_call(
-            [str(_VENV_PYTHON), "-m", "pip", "install", "--quiet", "-e", dev_path]
-        )
-    else:
-        subprocess.check_call(
-            [
-                str(_VENV_PYTHON),
-                "-m",
-                "pip",
-                "install",
-                "--quiet",
-                f"nanvix-zutil=={_ZUTIL_VERSION}",
-            ]
-        )
-
-
-if not _VENV_PYTHON.exists():
-    _bootstrap()
-
-if Path(sys.executable).resolve() != _VENV_PYTHON.resolve():
-    os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), __file__, *sys.argv[1:]])
+if not sys.prefix.startswith(str(_VENV)):
+    if not _VENV.exists():
+        print("bootstrap: creating venv …", flush=True)
+        subprocess.check_call([sys.executable, "-m", "venv", str(_VENV)])
+        print("bootstrap: installing nanvix-zutil …", flush=True)
+        local_path = os.environ.get("NANVIX_ZUTIL_PATH")
+        if local_path:
+            subprocess.check_call(
+                [str(_VENV_PYTHON), "-m", "pip", "install", "-q", "-e", local_path]
+            )
+        elif _ZUTIL_RELEASE_URL:
+            subprocess.check_call(
+                [str(_VENV_PYTHON), "-m", "pip", "install", "-q", _ZUTIL_RELEASE_URL]
+            )
+        else:
+            print(
+                "error: NANVIX_ZUTIL_PATH not set and release URL is not configured.",
+                file=sys.stderr,
+            )
+            sys.exit(3)
+    rc = subprocess.call(
+        [str(_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]]
+    )
+    sys.exit(rc)
 
 # ── Build script ──────────────────────────────────────────────────────
 from nanvix_zutil import Sysroot, ZScript  # noqa: E402

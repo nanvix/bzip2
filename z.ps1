@@ -57,6 +57,9 @@ if (-not (Test-Path $zScript)) {
     exit 3
 }
 
-$pyArgs = if ($python -eq "py") { @("-3", $zScript) + $args } else { @($zScript) + $args }
-& $python @pyArgs
+if ($python -eq "py") {
+    & $python -3 $zScript @args
+} else {
+    & $python $zScript @args
+}
 exit $LASTEXITCODE

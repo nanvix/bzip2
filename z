@@ -17,9 +17,15 @@ find_python() {
     for candidate in "${candidates[@]}"; do
         if command -v "${candidate}" &>/dev/null; then
             local version
-            version=$("${candidate}" -c \
-                "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" \
-                2>/dev/null) || continue
+            if [[ "${candidate}" == "py" ]]; then
+                version=$("${candidate}" -3 -c \
+                    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" \
+                    2>/dev/null) || continue
+            else
+                version=$("${candidate}" -c \
+                    "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" \
+                    2>/dev/null) || continue
+            fi
             local major minor
             major=$(echo "${version}" | cut -d. -f1)
             minor=$(echo "${version}" | cut -d. -f2)
@@ -49,4 +55,8 @@ if [[ ! -f "${Z_SCRIPT}" ]]; then
     exit 3
 fi
 
-exec "${PYTHON}" "${Z_SCRIPT}" "$@"
+if [[ "${PYTHON}" == "py" ]]; then
+    exec "${PYTHON}" -3 "${Z_SCRIPT}" "$@"
+else
+    exec "${PYTHON}" "${Z_SCRIPT}" "$@"
+fi
