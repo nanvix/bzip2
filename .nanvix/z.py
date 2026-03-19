@@ -24,9 +24,8 @@ from pathlib import Path
 _NANVIX_DIR = Path(__file__).resolve().parent
 _VENV = _NANVIX_DIR / "venv"
 _VENV_PYTHON = _VENV / ("Scripts" if os.name == "nt" else "bin") / "python"
-_ZUTIL_VERSION = "0.1.0"
-# TODO: Replace with actual GitHub release URL once available.
-_ZUTIL_RELEASE_URL = ""
+_ZUTIL_VERSION = "0.1.0rc1"
+_ZUTIL_RELEASE_URL = "https://github.com/nanvix/zutils/releases/download/v0.1.0-rc1/nanvix_zutil-0.1.0rc1-py3-none-any.whl"
 
 if not sys.prefix.startswith(str(_VENV)):
     if not _VENV.exists():
