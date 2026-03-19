@@ -19,34 +19,74 @@ Usage (from repository root):
 import os
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 _NANVIX_DIR = Path(__file__).resolve().parent
 _VENV = _NANVIX_DIR / "venv"
-_VENV_PYTHON = _VENV / ("Scripts" if os.name == "nt" else "bin") / "python"
-_ZUTIL_VERSION = "0.1.0rc1"
+_VENV_SCRIPTS = Path(
+    sysconfig.get_path("scripts", vars={"base": str(_VENV), "platbase": str(_VENV)})
+)
+_VENV_PYTHON = _VENV_SCRIPTS / ("python.exe" if os.name == "nt" else "python")
 _ZUTIL_RELEASE_URL = "https://github.com/nanvix/zutils/releases/download/v0.1.0-rc1/nanvix_zutil-0.1.0rc1-py3-none-any.whl"
+_ZUTIL_HASH = "sha256:55df7a1ee81e401d6f9ead6a8e970c05599e3de7e66ff223a0186e5ad982d863"
 
-if not sys.prefix.startswith(str(_VENV)):
-    if not _VENV.exists():
-        print("bootstrap: creating venv …", flush=True)
-        subprocess.check_call([sys.executable, "-m", "venv", str(_VENV)])
-        print("bootstrap: installing nanvix-zutil …", flush=True)
-        local_path = os.environ.get("NANVIX_ZUTIL_PATH")
-        if local_path:
-            subprocess.check_call(
-                [str(_VENV_PYTHON), "-m", "pip", "install", "-q", "-e", local_path]
-            )
-        elif _ZUTIL_RELEASE_URL:
-            subprocess.check_call(
-                [str(_VENV_PYTHON), "-m", "pip", "install", "-q", _ZUTIL_RELEASE_URL]
-            )
-        else:
-            print(
-                "error: NANVIX_ZUTIL_PATH not set and release URL is not configured.",
-                file=sys.stderr,
-            )
-            sys.exit(3)
+
+def _inside_venv() -> bool:
+    """Return True if already running inside the project venv."""
+    if sys.prefix == sys.base_prefix:
+        return False
+    try:
+        return Path(sys.executable).resolve().is_relative_to(_VENV.resolve())
+    except (OSError, ValueError):
+        return False
+
+
+def _verify_and_install_wheel() -> None:
+    """Download the nanvix-zutil wheel, verify its hash, and install it."""
+    import hashlib
+    import tempfile
+    import urllib.request
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        whl_path = Path(tmpdir) / "nanvix_zutil.whl"
+        print("bootstrap: downloading nanvix-zutil …", flush=True)
+        urllib.request.urlretrieve(_ZUTIL_RELEASE_URL, whl_path)
+
+        if _ZUTIL_HASH:
+            algo, _, expected = _ZUTIL_HASH.partition(":")
+            actual = hashlib.new(algo, whl_path.read_bytes()).hexdigest()
+            if actual != expected:
+                print(
+                    f"error: hash mismatch for nanvix-zutil wheel\n"
+                    f"  expected: {expected}\n"
+                    f"  actual:   {actual}",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+        subprocess.check_call(
+            [str(_VENV_PYTHON), "-m", "pip", "install", "-q", str(whl_path)]
+        )
+
+
+def _create_venv() -> None:
+    """Create the venv and install nanvix-zutil."""
+    print("bootstrap: creating venv …", flush=True)
+    subprocess.check_call([sys.executable, "-m", "venv", str(_VENV)])
+    local_path = os.environ.get("NANVIX_ZUTIL_PATH")
+    if local_path:
+        print("bootstrap: installing nanvix-zutil (editable) …", flush=True)
+        subprocess.check_call(
+            [str(_VENV_PYTHON), "-m", "pip", "install", "-q", "-e", local_path]
+        )
+    else:
+        _verify_and_install_wheel()
+
+
+if not _inside_venv():
+    if not _VENV_PYTHON.exists():
+        _create_venv()
     rc = subprocess.call(
         [str(_VENV_PYTHON), str(Path(__file__).resolve()), *sys.argv[1:]]
     )

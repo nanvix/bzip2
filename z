@@ -45,7 +45,7 @@ PYTHON=$(find_python) || {
     exit 3
 }
 
-# Resolve the directory containing this script, following symlinks.
+# Resolve the directory containing this script.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 Z_SCRIPT="${SCRIPT_DIR}/.nanvix/z.py"
 
