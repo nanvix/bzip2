@@ -58,26 +58,33 @@ def _verify_and_install_wheel() -> None:
         try:
             with urllib.request.urlopen(checksums_url) as resp:
                 for line in resp.read().decode().splitlines():
-                    if whl_name in line:
-                        expected_hash = line.split()[0]
+                    parts = line.split()
+                    if len(parts) == 2 and parts[1].strip("*") == whl_name:
+                        expected_hash = parts[0]
                         break
-        except urllib.error.URLError:
+        except urllib.error.URLError as exc:
             print(
-                "warning: could not fetch checksums, skipping verification",
+                f"error: could not fetch checksums for nanvix-zutil: {exc}",
                 file=sys.stderr,
-                flush=True,
             )
+            sys.exit(4)
 
-        if expected_hash:
-            actual = hashlib.sha256(whl_path.read_bytes()).hexdigest()
-            if actual != expected_hash:
-                print(
-                    f"error: hash mismatch for nanvix-zutil wheel\n"
-                    f"  expected: {expected_hash}\n"
-                    f"  actual:   {actual}",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
+        if not expected_hash:
+            print(
+                f"error: no checksum entry for {whl_name} in {checksums_url}",
+                file=sys.stderr,
+            )
+            sys.exit(4)
+
+        actual = hashlib.sha256(whl_path.read_bytes()).hexdigest()
+        if actual != expected_hash:
+            print(
+                f"error: hash mismatch for nanvix-zutil wheel\n"
+                f"  expected: {expected_hash}\n"
+                f"  actual:   {actual}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
 
         subprocess.check_call(
             [str(_VENV_PYTHON), "-m", "pip", "install", "-q", str(whl_path)]

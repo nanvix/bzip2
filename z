@@ -27,8 +27,8 @@ find_python() {
                     2>/dev/null) || continue
             fi
             local major minor
-            major=$(echo "${version}" | cut -d. -f1)
-            minor=$(echo "${version}" | cut -d. -f2)
+            major=$(echo "${version}" | tr -d '\r' | cut -d. -f1)
+            minor=$(echo "${version}" | tr -d '\r' | cut -d. -f2)
             if [[ "${major}" -gt "${MIN_PYTHON_MAJOR}" ]] || \
                [[ "${major}" -eq "${MIN_PYTHON_MAJOR}" && "${minor}" -ge "${MIN_PYTHON_MINOR}" ]]; then
                 echo "${candidate}"
