@@ -19,26 +19,17 @@ Usage (from repository root):
 import os
 import subprocess
 import sys
-import sysconfig
 from pathlib import Path
 
 _NANVIX_DIR = Path(__file__).resolve().parent
 _VENV = _NANVIX_DIR / "venv"
-_VENV_SCRIPTS = Path(
-    sysconfig.get_path("scripts", vars={"base": str(_VENV), "platbase": str(_VENV)})
-)
-_VENV_PYTHON = _VENV_SCRIPTS / ("python.exe" if os.name == "nt" else "python")
-_ZUTIL_TAG = "v0.1.0-rc1"
+_VENV_PYTHON = _VENV / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+_ZUTIL_TAG = "v0.1.0-rc2"
 
 
 def _inside_venv() -> bool:
     """Return True if already running inside the project venv."""
-    if sys.prefix == sys.base_prefix:
-        return False
-    try:
-        return Path(sys.executable).resolve().is_relative_to(_VENV.resolve())
-    except (OSError, ValueError):
-        return False
+    return sys.prefix != sys.base_prefix
 
 
 def _zutil_urls() -> tuple[str, str, str]:
