@@ -19,76 +19,20 @@ Usage (from repository root):
 import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 _NANVIX_DIR = Path(__file__).resolve().parent
 _VENV = _NANVIX_DIR / "venv"
 _VENV_PYTHON = _VENV / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
 _ZUTIL_TAG = "v0.1.0-rc2"
+_ZUTIL_RELEASE_BASE = "https://github.com/nanvix/zutils/releases/download"
+_ZUTIL_HASH = "sha256:728a6ac6c9265ce58727569156c21877f94dbf6b449849a28585ccc6cde1b91f"
 
 
 def _inside_venv() -> bool:
     """Return True if already running inside the project venv."""
     return sys.prefix != sys.base_prefix
-
-
-def _zutil_urls() -> tuple[str, str, str]:
-    """Derive wheel URL, checksums URL, and wheel filename from the pinned tag."""
-    version = _ZUTIL_TAG.lstrip("v").replace("-", "")
-    whl_name = f"nanvix_zutil-{version}-py3-none-any.whl"
-    base = f"https://github.com/nanvix/zutils/releases/download/{_ZUTIL_TAG}"
-    return f"{base}/{whl_name}", f"{base}/checksums.sha256", whl_name
-
-
-def _verify_and_install_wheel() -> None:
-    """Download the nanvix-zutil wheel, verify its hash, and install it."""
-    import hashlib
-    import tempfile
-    import urllib.error
-    import urllib.request
-
-    whl_url, checksums_url, whl_name = _zutil_urls()
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        whl_path = Path(tmpdir) / whl_name
-        print(f"bootstrap: downloading nanvix-zutil ({_ZUTIL_TAG}) …", flush=True)
-        urllib.request.urlretrieve(whl_url, whl_path)
-
-        expected_hash: str | None = None
-        try:
-            with urllib.request.urlopen(checksums_url) as resp:
-                for line in resp.read().decode().splitlines():
-                    parts = line.split()
-                    if len(parts) == 2 and parts[1].strip("*") == whl_name:
-                        expected_hash = parts[0]
-                        break
-        except urllib.error.URLError as exc:
-            print(
-                f"error: could not fetch checksums for nanvix-zutil: {exc}",
-                file=sys.stderr,
-            )
-            sys.exit(4)
-
-        if not expected_hash:
-            print(
-                f"error: no checksum entry for {whl_name} in {checksums_url}",
-                file=sys.stderr,
-            )
-            sys.exit(4)
-
-        actual = hashlib.sha256(whl_path.read_bytes()).hexdigest()
-        if actual != expected_hash:
-            print(
-                f"error: hash mismatch for nanvix-zutil wheel\n"
-                f"  expected: {expected_hash}\n"
-                f"  actual:   {actual}",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-
-        subprocess.check_call(
-            [str(_VENV_PYTHON), "-m", "pip", "install", "-q", str(whl_path)]
-        )
 
 
 def _create_venv() -> None:
@@ -102,7 +46,21 @@ def _create_venv() -> None:
             [str(_VENV_PYTHON), "-m", "pip", "install", "-q", "-e", local_path]
         )
     else:
-        _verify_and_install_wheel()
+        version = _ZUTIL_TAG.lstrip("v").replace("-", "")
+        whl_name = f"nanvix_zutil-{version}-py3-none-any.whl"
+        whl_url = f"{_ZUTIL_RELEASE_BASE}/{_ZUTIL_TAG}/{whl_name}"
+        req_line = f"nanvix_zutil @ {whl_url} --hash={_ZUTIL_HASH}"
+        print(f"bootstrap: installing nanvix-zutil ({_ZUTIL_TAG}) …", flush=True)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(req_line + "\n")
+            req_path = f.name
+        try:
+            subprocess.check_call(
+                [str(_VENV_PYTHON), "-m", "pip", "install", "-q",
+                 "--require-hashes", "-r", req_path]
+            )
+        finally:
+            Path(req_path).unlink(missing_ok=True)
 
 
 if not _inside_venv():
@@ -114,25 +72,35 @@ if not _inside_venv():
     sys.exit(rc)
 
 # ── Build script ──────────────────────────────────────────────────────
-from nanvix_zutil import Sysroot, ZScript  # noqa: E402
+from nanvix_zutil import Sysroot, ZScript, log  # noqa: E402
+
+# Make variable names passed to Makefile.nanvix.
+_MAKE_VAR_CONFIG = "CONFIG_NANVIX"
+_MAKE_VAR_HOME = "NANVIX_HOME"
+_MAKE_VAR_PLATFORM = "PLATFORM"
+_MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
+_MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
+
+# Config keys.
+_CFG_SYSROOT = "NANVIX_SYSROOT"
+_CFG_GH_TOKEN = "GH_TOKEN"
+
+# Sysroot verification files.
+_SYSROOT_REQUIRED_FILES = ["lib/libposix.a"]
 
 
 class Bzip2Build(ZScript):
     """Build script for nanvix/bzip2."""
 
     # bzip2 is a leaf library with no Nanvix library dependencies.
-    # If dependencies were needed they'd be declared as a DEPS list and
-    # installed via Buildroot.install_dep() in setup().
 
     def _make(self, *targets: str, extra_vars: dict[str, str] | None = None) -> None:
         """Run ``make -f Makefile.nanvix`` with standard Nanvix variables."""
         self.config.load()
-        nanvix_sysroot = self.config.get("NANVIX_SYSROOT", "")
+        nanvix_sysroot = self.config.get(_CFG_SYSROOT, "")
         if not nanvix_sysroot:
-            from nanvix_zutil import log
-
             log.fatal(
-                "NANVIX_SYSROOT is not set.",
+                f"{_CFG_SYSROOT} is not set.",
                 code=3,
                 hint="Run `./z setup` first to download the sysroot.",
             )
@@ -141,8 +109,8 @@ class Bzip2Build(ZScript):
             "make",
             "-f",
             "Makefile.nanvix",
-            "CONFIG_NANVIX=y",
-            f"NANVIX_HOME={nanvix_sysroot}",
+            f"{_MAKE_VAR_CONFIG}=y",
+            f"{_MAKE_VAR_HOME}={nanvix_sysroot}",
         ]
         if extra_vars:
             for key, val in extra_vars.items():
@@ -159,10 +127,10 @@ class Bzip2Build(ZScript):
             deployment_mode=self.config.deployment_mode,
             memory_size=self.config.memory_size,
             tag="latest",
-            gh_token=self.config.get("GH_TOKEN"),
+            gh_token=self.config.get(_CFG_GH_TOKEN),
         )
-        sysroot.verify(["lib/libposix.a"])
-        self.config.set("NANVIX_SYSROOT", str(sysroot.path))
+        sysroot.verify(_SYSROOT_REQUIRED_FILES)
+        self.config.set(_CFG_SYSROOT, str(sysroot.path))
         self.config.save()
 
     def build(self) -> None:
@@ -172,18 +140,18 @@ class Bzip2Build(ZScript):
     def test(self) -> None:
         """Run smoke, integration, and functional tests."""
         platform_vars = {
-            "PLATFORM": self.config.machine,
-            "PROCESS_MODE": self.config.deployment_mode,
-            "MEMORY_SIZE": self.config.memory_size,
+            _MAKE_VAR_PLATFORM: self.config.machine,
+            _MAKE_VAR_PROCESS_MODE: self.config.deployment_mode,
+            _MAKE_VAR_MEMORY_SIZE: self.config.memory_size,
         }
         self._make("test", extra_vars=platform_vars)
 
     def release(self) -> None:
         """Package the release tarball and verify it."""
         platform_vars = {
-            "PLATFORM": self.config.machine,
-            "PROCESS_MODE": self.config.deployment_mode,
-            "MEMORY_SIZE": self.config.memory_size,
+            _MAKE_VAR_PLATFORM: self.config.machine,
+            _MAKE_VAR_PROCESS_MODE: self.config.deployment_mode,
+            _MAKE_VAR_MEMORY_SIZE: self.config.memory_size,
         }
         self._make("package", extra_vars=platform_vars)
         self._make("verify-package", extra_vars=platform_vars)
