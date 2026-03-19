@@ -28,8 +28,7 @@ _VENV_SCRIPTS = Path(
     sysconfig.get_path("scripts", vars={"base": str(_VENV), "platbase": str(_VENV)})
 )
 _VENV_PYTHON = _VENV_SCRIPTS / ("python.exe" if os.name == "nt" else "python")
-_ZUTIL_RELEASE_URL = "https://github.com/nanvix/zutils/releases/download/v0.1.0-rc1/nanvix_zutil-0.1.0rc1-py3-none-any.whl"
-_ZUTIL_HASH = "sha256:55df7a1ee81e401d6f9ead6a8e970c05599e3de7e66ff223a0186e5ad982d863"
+_ZUTIL_TAG = "v0.1.0-rc1"
 
 
 def _inside_venv() -> bool:
@@ -42,24 +41,48 @@ def _inside_venv() -> bool:
         return False
 
 
+def _zutil_urls() -> tuple[str, str, str]:
+    """Derive wheel URL, checksums URL, and wheel filename from the pinned tag."""
+    version = _ZUTIL_TAG.lstrip("v").replace("-", "")
+    whl_name = f"nanvix_zutil-{version}-py3-none-any.whl"
+    base = f"https://github.com/nanvix/zutils/releases/download/{_ZUTIL_TAG}"
+    return f"{base}/{whl_name}", f"{base}/checksums.sha256", whl_name
+
+
 def _verify_and_install_wheel() -> None:
     """Download the nanvix-zutil wheel, verify its hash, and install it."""
     import hashlib
     import tempfile
+    import urllib.error
     import urllib.request
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        whl_path = Path(tmpdir) / "nanvix_zutil.whl"
-        print("bootstrap: downloading nanvix-zutil …", flush=True)
-        urllib.request.urlretrieve(_ZUTIL_RELEASE_URL, whl_path)
+    whl_url, checksums_url, whl_name = _zutil_urls()
 
-        if _ZUTIL_HASH:
-            algo, _, expected = _ZUTIL_HASH.partition(":")
-            actual = hashlib.new(algo, whl_path.read_bytes()).hexdigest()
-            if actual != expected:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        whl_path = Path(tmpdir) / whl_name
+        print(f"bootstrap: downloading nanvix-zutil ({_ZUTIL_TAG}) …", flush=True)
+        urllib.request.urlretrieve(whl_url, whl_path)
+
+        expected_hash: str | None = None
+        try:
+            with urllib.request.urlopen(checksums_url) as resp:
+                for line in resp.read().decode().splitlines():
+                    if whl_name in line:
+                        expected_hash = line.split()[0]
+                        break
+        except urllib.error.URLError:
+            print(
+                "warning: could not fetch checksums, skipping verification",
+                file=sys.stderr,
+                flush=True,
+            )
+
+        if expected_hash:
+            actual = hashlib.sha256(whl_path.read_bytes()).hexdigest()
+            if actual != expected_hash:
                 print(
                     f"error: hash mismatch for nanvix-zutil wheel\n"
-                    f"  expected: {expected}\n"
+                    f"  expected: {expected_hash}\n"
                     f"  actual:   {actual}",
                     file=sys.stderr,
                 )
