@@ -36,3 +36,4 @@ builddir
 .nanvix/sysroot/
 .nanvix/buildroot/
 .nanvix/__pycache__/
+dist/
