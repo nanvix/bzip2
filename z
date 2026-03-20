@@ -11,6 +11,10 @@ set -euo pipefail
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=12
 
+# Exit codes (mirrors nanvix-zutil convention).
+EXIT_GENERAL_ERROR=1
+EXIT_MISSING_DEP=3
+
 # nanvix-zutil release to install in the project venv.
 ZUTIL_TAG="v0.1.1"
 ZUTIL_RELEASE_BASE="https://github.com/nanvix/zutils/releases/download"
@@ -48,7 +52,7 @@ find_python() {
             fi
         fi
     done
-    return 1
+    return "${EXIT_GENERAL_ERROR}"
 }
 
 # Run the discovered Python interpreter (handles 'py -3' on Windows).
@@ -63,7 +67,7 @@ run_python() {
 PYTHON=$(find_python) || {
     echo "error: Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ not found in PATH." >&2
     echo "hint:  Install Python 3.12+ and ensure it is on your PATH." >&2
-    exit 3
+    exit "${EXIT_MISSING_DEP}"
 }
 
 # Resolve the directory containing this script.
@@ -81,7 +85,7 @@ fi
 if [[ ! -f "${Z_SCRIPT}" ]]; then
     echo "error: ${Z_SCRIPT} not found." >&2
     echo "hint:  Create .nanvix/z.py with a ZScript subclass." >&2
-    exit 3
+    exit "${EXIT_MISSING_DEP}"
 fi
 
 # Bootstrap: create venv and install nanvix-zutil if needed.

@@ -15,6 +15,9 @@ $ErrorActionPreference = "Stop"
 $MIN_MAJOR = 3
 $MIN_MINOR = 12
 
+# Exit codes (mirrors nanvix-zutil convention).
+$EXIT_MISSING_DEP = 3
+
 # nanvix-zutil release to install in the project venv.
 $ZUTIL_TAG = "v0.1.1"
 $ZUTIL_RELEASE_BASE = "https://github.com/nanvix/zutils/releases/download"
@@ -74,7 +77,7 @@ $python = Find-Python
 if ($null -eq $python) {
     Write-Warning "error: Python ${MIN_MAJOR}.${MIN_MINOR}+ not found in PATH."
     Write-Host "hint:  Install Python 3.12+ and ensure it is on your PATH." -ForegroundColor Yellow
-    exit 3
+    exit $EXIT_MISSING_DEP
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -89,7 +92,7 @@ if ($IsWindows) {
 if (-not (Test-Path $zScript)) {
     Write-Warning "error: $zScript not found."
     Write-Host "hint:  Create .nanvix/z.py with a ZScript subclass." -ForegroundColor Yellow
-    exit 3
+    exit $EXIT_MISSING_DEP
 }
 
 # Bootstrap: create venv and install nanvix-zutil if needed.

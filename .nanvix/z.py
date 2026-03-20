@@ -13,6 +13,9 @@ Usage (from repository root):
 
 from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, Sysroot, ZScript, log
 
+# Exit codes (mirrors nanvix-zutil convention).
+_EXIT_MISSING_DEP = 3
+
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_CONFIG = "CONFIG_NANVIX"
 _MAKE_VAR_HOME = "NANVIX_HOME"
@@ -30,7 +33,7 @@ class Bzip2Build(ZScript):
         if not nanvix_sysroot:
             log.fatal(
                 f"{CFG_SYSROOT} is not set.",
-                code=3,
+                code=_EXIT_MISSING_DEP,
                 hint="Run `./z setup` first to download the sysroot.",
             )
 
