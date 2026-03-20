@@ -7,7 +7,7 @@
 # If script execution is disabled, run:
 #   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
-#Requires -Version 5.1
+#Requires -Version 7.0
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
@@ -64,7 +64,7 @@ function Invoke-Python {
 
 $python = Find-Python
 if ($null -eq $python) {
-    Write-Host "error: Python ${MIN_MAJOR}.${MIN_MINOR}+ not found in PATH." -ForegroundColor Red
+    Write-Warning "error: Python ${MIN_MAJOR}.${MIN_MINOR}+ not found in PATH."
     Write-Host "hint:  Install Python 3.12+ and ensure it is on your PATH." -ForegroundColor Yellow
     exit 3
 }
@@ -72,15 +72,14 @@ if ($null -eq $python) {
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $zScript = Join-Path $scriptDir ".nanvix" "z.py"
 $venvDir = Join-Path $scriptDir ".nanvix" "venv"
-$isWin = ($PSVersionTable.PSEdition -eq "Desktop") -or $IsWindows
-if ($isWin) {
+if ($IsWindows) {
     $venvPython = Join-Path $venvDir "Scripts" "python.exe"
 } else {
     $venvPython = Join-Path $venvDir "bin" "python"
 }
 
 if (-not (Test-Path $zScript)) {
-    Write-Host "error: $zScript not found." -ForegroundColor Red
+    Write-Warning "error: $zScript not found."
     Write-Host "hint:  Create .nanvix/z.py with a ZScript subclass." -ForegroundColor Yellow
     exit 3
 }
