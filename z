@@ -11,6 +11,11 @@ set -euo pipefail
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=12
 
+# nanvix-zutil release to install in the project venv.
+ZUTIL_TAG="v0.1.0"
+ZUTIL_RELEASE_BASE="https://github.com/nanvix/zutils/releases/download"
+ZUTIL_HASH="sha256:120d9bb4e409cf75ce823237812a414cd4ca90be8c421cad0c3583889a097497"
+
 # Locate a suitable Python interpreter.
 find_python() {
     # Prefer version-suffixed interpreters (e.g., python3.12, python3.13) first,
@@ -46,6 +51,15 @@ find_python() {
     return 1
 }
 
+# Run the discovered Python interpreter (handles 'py -3' on Windows).
+run_python() {
+    if [[ "${PYTHON}" == "py" ]]; then
+        "${PYTHON}" -3 "$@"
+    else
+        "${PYTHON}" "$@"
+    fi
+}
+
 PYTHON=$(find_python) || {
     echo "error: Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ not found in PATH." >&2
     echo "hint:  Install Python 3.12+ and ensure it is on your PATH." >&2
@@ -55,6 +69,8 @@ PYTHON=$(find_python) || {
 # Resolve the directory containing this script.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 Z_SCRIPT="${SCRIPT_DIR}/.nanvix/z.py"
+VENV_DIR="${SCRIPT_DIR}/.nanvix/venv"
+VENV_PYTHON="${VENV_DIR}/bin/python"
 
 if [[ ! -f "${Z_SCRIPT}" ]]; then
     echo "error: ${Z_SCRIPT} not found." >&2
@@ -62,8 +78,25 @@ if [[ ! -f "${Z_SCRIPT}" ]]; then
     exit 3
 fi
 
-if [[ "${PYTHON}" == "py" ]]; then
-    exec "${PYTHON}" -3 "${Z_SCRIPT}" "$@"
-else
-    exec "${PYTHON}" "${Z_SCRIPT}" "$@"
+# Bootstrap: create venv and install nanvix-zutil if needed.
+if [[ ! -f "${VENV_PYTHON}" ]]; then
+    echo "bootstrap: creating venv …" >&2
+    run_python -m venv "${VENV_DIR}"
+
+    if [[ -n "${NANVIX_ZUTIL_PATH:-}" ]]; then
+        echo "bootstrap: installing nanvix-zutil (editable) …" >&2
+        "${VENV_PYTHON}" -m pip install -q -e "${NANVIX_ZUTIL_PATH}"
+    else
+        version="${ZUTIL_TAG#v}"
+        version="${version//-/}"
+        whl_name="nanvix_zutil-${version}-py3-none-any.whl"
+        whl_url="${ZUTIL_RELEASE_BASE}/${ZUTIL_TAG}/${whl_name}"
+        echo "bootstrap: installing nanvix-zutil (${ZUTIL_TAG}) …" >&2
+        tmp_req=$(mktemp)
+        echo "nanvix_zutil @ ${whl_url} --hash=${ZUTIL_HASH}" > "${tmp_req}"
+        "${VENV_PYTHON}" -m pip install -q --require-hashes -r "${tmp_req}"
+        rm -f "${tmp_req}"
+    fi
 fi
+
+exec "${VENV_PYTHON}" "${Z_SCRIPT}" "$@"
