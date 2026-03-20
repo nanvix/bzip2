@@ -24,9 +24,6 @@ _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 class Bzip2Build(ZScript):
     """Build script for nanvix/bzip2."""
 
-    # bzip2 is a leaf library — only needs libposix.a, not user.ld.
-    SYSROOT_REQUIRED_FILES = ("lib/libposix.a",)
-
     def _make(self, *targets: str, extra_vars: dict[str, str] | None = None) -> None:
         """Run ``make -f Makefile.nanvix`` with standard Nanvix variables."""
         nanvix_sysroot = self.config.get(CFG_SYSROOT, "")
