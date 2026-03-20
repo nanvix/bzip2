@@ -16,7 +16,13 @@ $MIN_MAJOR = 3
 $MIN_MINOR = 12
 
 function Find-Python {
-    $candidates = @("py", "python3", "python")
+    # Prefer version-suffixed interpreters (e.g., python3.12, python3.13) first,
+    # then fall back to generic names.
+    $candidates = @()
+    for ($minor = 20; $minor -ge $MIN_MINOR; $minor--) {
+        $candidates += "python3.$minor"
+    }
+    $candidates += @("py", "python3", "python")
     foreach ($candidate in $candidates) {
         $cmd = Get-Command $candidate -ErrorAction SilentlyContinue
         if ($null -eq $cmd) { continue }
@@ -49,7 +55,7 @@ if ($null -eq $python) {
 }
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$zScript = Join-Path $scriptDir ".nanvix\z.py"
+$zScript = Join-Path $scriptDir ".nanvix" "z.py"
 
 if (-not (Test-Path $zScript)) {
     Write-Host "error: $zScript not found." -ForegroundColor Red

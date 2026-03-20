@@ -13,7 +13,14 @@ MIN_PYTHON_MINOR=12
 
 # Locate a suitable Python interpreter.
 find_python() {
-    local candidates=("python3" "python" "py")
+    # Prefer version-suffixed interpreters (e.g., python3.12, python3.13) first,
+    # then fall back to generic names.
+    local candidates=()
+    local minor
+    for ((minor=20; minor>=MIN_PYTHON_MINOR; minor--)); do
+        candidates+=("python3.${minor}")
+    done
+    candidates+=("python3" "python" "py")
     for candidate in "${candidates[@]}"; do
         if command -v "${candidate}" &>/dev/null; then
             local version
