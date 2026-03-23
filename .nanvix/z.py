@@ -92,7 +92,10 @@ class Bzip2Build(ZScript):
 
     def clean(self) -> None:
         """Remove build artifacts."""
-        self.run(*self._make_args("clean"), cwd=self.repo_root)
+        # Call make directly instead of via _make_args() so that clean works
+        # without a prior ./z setup (the Makefile gates its NANVIX_HOME check
+        # with `ifneq ($(MAKECMDGOALS),clean)`).
+        self.run("make", "-f", "Makefile.nanvix", "clean", cwd=self.repo_root)
 
 
 if __name__ == "__main__":
