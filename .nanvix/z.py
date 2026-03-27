@@ -1,101 +1,53 @@
 # Copyright(c) The Maintainers of Nanvix.
 # Licensed under the MIT License.
 
-"""Nanvix build script for bzip2.
+"""Nanvix build script for bzip2."""
 
-Usage:
-    ./z setup     # Download Nanvix sysroot
-    ./z build     # Cross-compile libbz2.a
-    ./z test      # Run test suite (smoke + integration + functional)
-    ./z release   # Package release tarball
-    ./z clean     # Remove build artifacts
-"""
-
-from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, CFG_TAG, CFG_TOOLCHAIN, EXIT_MISSING_DEP, Sysroot, ZScript, log
-
-# Makefile variable names (build-system-specific).
-_MAKE_VAR_CONFIG = "CONFIG_NANVIX"
-_MAKE_VAR_HOME = "NANVIX_HOME"
-_MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
-_MAKE_VAR_PLATFORM = "PLATFORM"
-_MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
-_MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
+from nanvix_zutil import CFG_SYSROOT, CFG_TOOLCHAIN, EXIT_BUILD_FAILURE, ZScript, log
 
 
 class Bzip2Build(ZScript):
     """Build script for nanvix/bzip2."""
-
-    NANVIX_TAG = "latest"
 
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list."""
         sysroot = self.config.get(CFG_SYSROOT, "")
         if not sysroot:
             log.fatal(
-                f"{CFG_SYSROOT} is not set.",
-                code=EXIT_MISSING_DEP,
-                hint="Run `./z setup` first to download the sysroot.",
+                "Sysroot not configured \u2014 run 'nanvix-zutil setup' first.",
+                code=EXIT_BUILD_FAILURE,
             )
-        toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix")
+        toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix") or "/opt/nanvix"
 
         args = [
             "make", "-f", "Makefile.nanvix",
-            f"{_MAKE_VAR_CONFIG}=y",
-            f"{_MAKE_VAR_HOME}={sysroot}",
-            f"{_MAKE_VAR_TOOLCHAIN}={toolchain}",
+            "CONFIG_NANVIX=y",
+            f"NANVIX_HOME={sysroot}",
+            f"NANVIX_TOOLCHAIN={toolchain}",
+            f"PLATFORM={self.config.machine}",
+            f"PROCESS_MODE={self.config.deployment_mode}",
+            f"MEMORY_SIZE={self.config.memory_size}",
         ]
-
-        args.extend([
-            f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
-            f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
-            f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
-        ])
-
         args.extend(targets)
         return args
 
-    def setup(self) -> None:
-        """Download the Nanvix sysroot."""
-        tag = self.config.get(CFG_TAG, self.NANVIX_TAG)
-        if not tag:
-            log.fatal(f"{CFG_TAG} is not set.", code=EXIT_MISSING_DEP)
-
-        sysroot = Sysroot.download(
-            machine=self.config.machine,
-            deployment_mode=self.config.deployment_mode,
-            memory_size=self.config.memory_size,
-            tag=tag,
-            gh_token=self.config.get(CFG_GH_TOKEN),
-        )
-        sysroot.verify(self.sysroot_required_files())
-        self.config.set(CFG_SYSROOT, str(sysroot.path))
-        self.config.save()
-
     def build(self) -> None:
         """Cross-compile libbz2.a for Nanvix."""
-        self.run(*self._make_args("all"), cwd=self.repo_root)
+        self.run(*self._make_args("all"))
 
     def test(self) -> None:
-        """Run the bzip2 test suite.
-
-        Without targets, runs the full suite (smoke + integration + functional).
-        With targets (e.g. ``./z test -- test-smoke test-integration``), passes
-        them directly to the Makefile.
-        """
+        """Run the bzip2 test suite."""
         targets = self.targets if self.targets else ["test"]
-        self.run(*self._make_args(*targets), cwd=self.repo_root)
+        self.run(*self._make_args(*targets))
 
     def release(self) -> None:
         """Package the bzip2 release tarball and verify it."""
-        self.run(*self._make_args("package"), cwd=self.repo_root)
-        self.run(*self._make_args("verify-package"), cwd=self.repo_root)
+        self.run(*self._make_args("package"))
+        self.run(*self._make_args("verify-package"))
 
     def clean(self) -> None:
         """Remove build artifacts."""
-        # Call make directly instead of via _make_args() so that clean works
-        # without a prior ./z setup (the Makefile gates its NANVIX_HOME check
-        # with `ifneq ($(MAKECMDGOALS),clean)`).
-        self.run("make", "-f", "Makefile.nanvix", "clean", cwd=self.repo_root)
+        self.run("make", "-f", "Makefile.nanvix", "clean")
 
 
 if __name__ == "__main__":
