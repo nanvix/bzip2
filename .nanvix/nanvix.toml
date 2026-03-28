@@ -1,0 +1,4 @@
+[package]
+name = "bzip2"
+version = "1.0.8"
+nanvix-version = "latest"

@@ -11,7 +11,7 @@ Usage:
     ./z clean     # Remove build artifacts
 """
 
-from nanvix_zutil import CFG_GH_TOKEN, CFG_SYSROOT, CFG_TAG, CFG_TOOLCHAIN, EXIT_MISSING_DEP, Sysroot, ZScript, log
+from nanvix_zutil import CFG_SYSROOT, CFG_TOOLCHAIN, EXIT_MISSING_DEP, ZScript, log
 
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_CONFIG = "CONFIG_NANVIX"
@@ -24,8 +24,6 @@ _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 
 class Bzip2Build(ZScript):
     """Build script for nanvix/bzip2."""
-
-    NANVIX_TAG = "latest"
 
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list."""
@@ -56,20 +54,7 @@ class Bzip2Build(ZScript):
 
     def setup(self) -> None:
         """Download the Nanvix sysroot."""
-        tag = self.config.get(CFG_TAG, self.NANVIX_TAG)
-        if not tag:
-            log.fatal(f"{CFG_TAG} is not set.", code=EXIT_MISSING_DEP)
-
-        sysroot = Sysroot.download(
-            machine=self.config.machine,
-            deployment_mode=self.config.deployment_mode,
-            memory_size=self.config.memory_size,
-            tag=tag,
-            gh_token=self.config.get(CFG_GH_TOKEN),
-        )
-        sysroot.verify(self.sysroot_required_files())
-        self.config.set(CFG_SYSROOT, str(sysroot.path))
-        self.config.save()
+        super().setup()
 
     def build(self) -> None:
         """Cross-compile libbz2.a for Nanvix."""
@@ -92,10 +77,10 @@ class Bzip2Build(ZScript):
 
     def clean(self) -> None:
         """Remove build artifacts."""
-        # Call make directly instead of via _make_args() so that clean works
-        # without a prior ./z setup (the Makefile gates its NANVIX_HOME check
-        # with `ifneq ($(MAKECMDGOALS),clean)`).
-        self.run("make", "-f", "Makefile.nanvix", "clean", cwd=self.repo_root)
+        self.run(
+            "make", "-f", "Makefile.nanvix", "clean",
+            cwd=self.repo_root,
+        )
 
 
 if __name__ == "__main__":
