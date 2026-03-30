@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = git rev-parse --show-toplevel
+$repoRoot = git -c safe.directory="$PSScriptRoot" -C "$PSScriptRoot" rev-parse --show-toplevel
 $venvDir = Join-Path $repoRoot ".nanvix\venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvActivate = Join-Path $venvDir "Scripts\Activate.ps1"
@@ -40,7 +40,7 @@ if (-not (Test-Path $venvZutil) -and -not (Get-Command nanvix-zutil -ErrorAction
 # Prefer the venv copy; fall back to global.
 if (Test-Path $venvZutil) {
     if (Test-Path $venvActivate) { & $venvActivate }
-    & nanvix-zutil @Args
+    & $venvZutil @Args
 } elseif (Get-Command nanvix-zutil -ErrorAction SilentlyContinue) {
     & nanvix-zutil @Args
 } else {

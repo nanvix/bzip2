@@ -37,7 +37,11 @@ if not wheel:
     sys.exit(1)
 print(wheel)
 ")
-	python3 -m venv "$VENV"
+	if [ -d "$VENV" ]; then
+		python3 -m venv --clear "$VENV"
+	else
+		python3 -m venv "$VENV"
+	fi
 	"$VENV/bin/pip" install --quiet "$WHEEL_URL"
 fi
 
