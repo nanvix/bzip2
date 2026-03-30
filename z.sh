@@ -15,7 +15,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -
 if [ -n "${CI:-}" ]; then
 	REPO_ROOT="$(git -c safe.directory="$SCRIPT_DIR" -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 else
-	REPO_ROOT="$(git rev-parse --show-toplevel)"
+	REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 fi
 
 VENV="$REPO_ROOT/.nanvix/venv"
