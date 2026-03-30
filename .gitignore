@@ -35,6 +35,7 @@ builddir
 .nanvix/sysroot/
 .nanvix/buildroot/
 .nanvix/env.json
+.nanvix/nanvix.lock
 dist/
 __pycache__/
 *.elf
