@@ -7,6 +7,11 @@
 
 set -euo pipefail
 
+# If nanvix-zutil is already on PATH (e.g. CI), use it directly.
+if command -v nanvix-zutil &>/dev/null; then
+	exec nanvix-zutil "$@"
+fi
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd -P)"
 REPO_ROOT="$(git -C "$SCRIPT_DIR" rev-parse --show-toplevel)"
 

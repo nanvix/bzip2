@@ -11,7 +11,13 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = git -c safe.directory="$PSScriptRoot" -C "$PSScriptRoot" rev-parse --show-toplevel
+# If nanvix-zutil is already on PATH (e.g. CI), use it directly.
+if (Get-Command nanvix-zutil -ErrorAction SilentlyContinue) {
+    & nanvix-zutil @Args
+    exit $LASTEXITCODE
+}
+
+$repoRoot = git rev-parse --show-toplevel
 $venvDir = Join-Path $repoRoot ".nanvix\venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $venvZutil = Join-Path $venvDir "Scripts\nanvix-zutil.exe"
