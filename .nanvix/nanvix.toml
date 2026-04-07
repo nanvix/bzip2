@@ -2,3 +2,17 @@
 name = "bzip2"
 version = "1.0.8"
 nanvix-version = "latest"
+
+[builds]
+[builds.matrix]
+platforms = ["hyperlight", "microvm"]
+modes = ["multi-process", "single-process", "standalone"]
+memory = ["128mb", "256mb"]
+
+[[builds.exclude]]
+platform = "hyperlight"
+mode = "single-process"
+
+[[builds.exclude]]
+platform = "hyperlight"
+mode = "multi-process"
