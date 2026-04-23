@@ -55,18 +55,20 @@ jobs:
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
 
   # -------------------------------------------------------------------
-  # Windows CI: cross-compile via Docker, then test locally.
-  # The reusable workflow's windows-test is disabled (windows-test: false)
-  # because it only runs setup+test (no build). bzip2 requires Docker to
-  # cross-compile, so we use a self-hosted Windows runner with Docker.
+  # Windows CI: download the standalone artifact built by the Linux CI,
+  # extract bzip2.elf, then test it locally via nanvixd.exe.
+  # The reusable workflow's windows-test is disabled because its test()
+  # would need a silent download fallback; instead we explicitly
+  # download the artifact from the same workflow run.
   # -------------------------------------------------------------------
   ci-windows:
     needs: [ci, ci-scheduled]
     if: >-
-      !cancelled() &&
+      always() &&
+      !failure() &&
       (needs.ci.result == 'success' || needs.ci-scheduled.result == 'success')
-    runs-on: [self-hosted, Windows]
-    timeout-minutes: 30
+    runs-on: windows-latest
+    timeout-minutes: 15
     env:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
     steps:
@@ -76,13 +78,28 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Download standalone build artifact
+        uses: actions/download-artifact@v5
+        with:
+          pattern: bzip2-*-microvm-standalone-*
+          path: ci-artifacts
+
+      - name: Extract bzip2.elf from build artifact
+        shell: pwsh
+        run: |
+          $tarball = Get-ChildItem -Path ci-artifacts -Recurse -Filter "*.tar.bz2" | Select-Object -First 1
+          if (-not $tarball) { Write-Error "No tarball found in ci-artifacts"; exit 1 }
+          Write-Output "Extracting from: $($tarball.FullName)"
+          tar -xjf $tarball.FullName
+          # Find and copy bzip2.elf to repo root.
+          $elf = Get-ChildItem -Recurse -Filter "bzip2.elf" | Select-Object -First 1
+          if (-not $elf) { Write-Error "bzip2.elf not found in tarball"; exit 1 }
+          Copy-Item $elf.FullName -Destination bzip2.elf
+          Write-Output "bzip2.elf ready: $((Get-Item bzip2.elf).Length) bytes"
+
       - name: Setup
         shell: pwsh
         run: .\z.ps1 setup
-
-      - name: Build (cross-compile via Docker)
-        shell: pwsh
-        run: .\z.ps1 --with-docker build
 
       - name: Test (run locally via nanvixd.exe)
         shell: pwsh

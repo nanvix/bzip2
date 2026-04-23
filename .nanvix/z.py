@@ -15,7 +15,6 @@ Usage:
 import dataclasses
 import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
@@ -196,9 +195,9 @@ class Bzip2Build(ZScript):
             label="sample1 decompress standalone",
             bzip2_elf=bzip2_elf,
             test_file=sample_bz2,
-            test_file_guest_name="sample1.bz2",
+            test_file_guest_name="sample1_ref.bz2",
             nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
-            bzip2_args=["-d", "-k", "-f", "/tmp/sample1.bz2"],
+            bzip2_args=["-d", "-k", "-f", "/tmp/sample1_ref.bz2"],
         )
 
         print("=== All bzip2 Windows tests PASSED ===")
@@ -225,10 +224,19 @@ class Bzip2Build(ZScript):
             shutil.copy2(test_file, ramfs_dir / "tmp" / test_file_guest_name)
             ramfs_img = tmpdir_path / "rootfs.img"
 
-            subprocess.run(
-                [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
-                check=True, timeout=60,
-            )
+            try:
+                subprocess.run(
+                    [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
+                    capture_output=True, text=True,
+                    check=True, timeout=60,
+                )
+            except subprocess.CalledProcessError as exc:
+                raise RuntimeError(
+                    f"{label}: mkramfs failed (exit code {exc.returncode})"
+                    f"\nstdout: {exc.stdout}\nstderr: {exc.stderr}"
+                ) from exc
+            except subprocess.TimeoutExpired as exc:
+                raise RuntimeError(f"{label}: mkramfs timed out (60s)") from exc
 
             cmd = [
                 str(nanvixd.resolve()),
@@ -251,8 +259,8 @@ class Bzip2Build(ZScript):
                     f"{label} failed (exit code {result.returncode})"
                 )
             print(f"  PASS: {label}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"{label} timed out (120s)")
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(f"{label}: nanvixd timed out (120s)") from exc
         finally:
             shutil.rmtree(tmpdir_path, ignore_errors=True)
 
