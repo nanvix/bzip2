@@ -168,7 +168,7 @@ ifdef CONFIG_NANVIX_DOCKER
 	  ./bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && \
 	  timeout --foreground 120 ./bin/nanvixd.elf \
 	    -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	    -- ./bzip2$(EXE) -1 -k -f /tmp/sample1.ref && \
+	    -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref && \
 	  echo "  PASS: sample1 compress standalone" || \
 	  { echo "  FAIL: sample1 compress standalone"; exit 1; }'
 	@echo "  Running standalone decompress test via nanvixd.elf (Docker)..."
@@ -179,7 +179,7 @@ ifdef CONFIG_NANVIX_DOCKER
 	  ./bin/mkramfs.elf -o /tmp/rootfs.img /tmp/nanvix-ramfs/ && \
 	  timeout --foreground 120 ./bin/nanvixd.elf \
 	    -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	    -- ./bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2 && \
+	    -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2 && \
 	  echo "  PASS: sample1 decompress standalone" || \
 	  { echo "  FAIL: sample1 decompress standalone"; exit 1; }'
 else
@@ -190,7 +190,7 @@ else
 	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
 	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
 	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	  -- ./bzip2$(EXE) -1 -k -f /tmp/sample1.ref
+	  -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
 	@echo "  PASS: sample1 compress standalone"
 	@echo "  Test 2: Standalone decompress reference (sample1.bz2)..."
 	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs/tmp
@@ -199,7 +199,7 @@ else
 	"$(SYSROOT_PATH)/bin/mkramfs.elf" -o /tmp/rootfs.img /tmp/nanvix-ramfs/
 	cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd.elf \
 	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
-	  -- ./bzip2$(EXE) -d -k -f /tmp/sample1_ref.bz2
+	  -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
 	@rm -rf /tmp/nanvix-ramfs /tmp/rootfs.img
 	@echo "  PASS: sample1 decompress standalone"
 endif
