@@ -80,7 +80,12 @@ class Bzip2Build(ZScript):
             self._run_tests_windows()
             return
         targets = self.targets if self.targets else ["test"]
-        self.run(*self._make_args(*targets), cwd=self.repo_root)
+        args = self._make_args(*targets)
+        # Skip the build prerequisite — the build phase already ran
+        # (possibly inside Docker, which bakes container paths into
+        # generated files that do not exist on the host).
+        args[1:1] = ["-o", "build", "-o", "all"]
+        self.run(*args, cwd=self.repo_root)
 
     def _run_tests_windows(self) -> None:
         """Run tests natively on Windows using nanvixd.exe."""
