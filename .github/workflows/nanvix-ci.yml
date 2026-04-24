@@ -33,7 +33,6 @@ jobs:
       caller-event-name: ${{ github.event_name }}
       windows-test: true
       windows-build: true
-      windows-runner: '["self-hosted","Windows"]'
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -53,7 +52,6 @@ jobs:
       caller-event-name: 'schedule'
       windows-test: true
       windows-build: true
-      windows-runner: '["self-hosted","Windows"]'
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
