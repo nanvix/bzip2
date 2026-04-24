@@ -32,7 +32,6 @@ jobs:
       matrix-exclude: '[{"platform":"hyperlight","process-mode":"single-process"},{"platform":"hyperlight","process-mode":"multi-process"}]'
       caller-event-name: ${{ github.event_name }}
       windows-test: true
-      windows-build: true
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -51,7 +50,6 @@ jobs:
       matrix-exclude: '[{"platform":"hyperlight","process-mode":"single-process"},{"platform":"hyperlight","process-mode":"multi-process"}]'
       caller-event-name: 'schedule'
       windows-test: true
-      windows-build: true
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
