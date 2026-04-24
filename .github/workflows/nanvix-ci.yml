@@ -25,13 +25,15 @@ concurrency:
 jobs:
   ci:
     if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
-    uses: nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.11.1
+    uses: nanvix/workflows/.github/workflows/nanvix-ci.yml@feature/docker-build-native-test
     with:
       zutil-version: "v0.7.26"
       memory-sizes: '["128mb","256mb"]'
       matrix-exclude: '[{"platform":"hyperlight","process-mode":"single-process"},{"platform":"hyperlight","process-mode":"multi-process"}]'
       caller-event-name: ${{ github.event_name }}
-      windows-test: false
+      windows-test: true
+      windows-build: true
+      windows-runner: '["self-hosted","Windows"]'
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
@@ -43,47 +45,15 @@ jobs:
       actions: write
       issues: write
       pull-requests: write
-    uses: nanvix/workflows/.github/workflows/nanvix-ci.yml@v1.11.1
+    uses: nanvix/workflows/.github/workflows/nanvix-ci.yml@feature/docker-build-native-test
     with:
       zutil-version: "v0.7.26"
       memory-sizes: '["128mb","256mb"]'
       matrix-exclude: '[{"platform":"hyperlight","process-mode":"single-process"},{"platform":"hyperlight","process-mode":"multi-process"}]'
       caller-event-name: 'schedule'
-      windows-test: false
+      windows-test: true
+      windows-build: true
+      windows-runner: '["self-hosted","Windows"]'
     secrets:
       GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
       DISPATCH_TOKEN: ${{ secrets.DISPATCH_TOKEN }}
-
-  # -------------------------------------------------------------------
-  # Windows CI: cross-compile via Docker, then test locally.
-  # The reusable workflow's windows-test is disabled (windows-test: false)
-  # because it only runs setup+test (no build). bzip2 requires Docker to
-  # cross-compile, so we use a self-hosted Windows runner with Docker.
-  # -------------------------------------------------------------------
-  ci-windows:
-    needs: [ci, ci-scheduled]
-    if: >-
-      !cancelled() &&
-      (needs.ci.result == 'success' || needs.ci-scheduled.result == 'success')
-    runs-on: [self-hosted, Windows]
-    timeout-minutes: 30
-    env:
-      GH_TOKEN: ${{ secrets.GH_TOKEN || secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v5
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Setup
-        shell: pwsh
-        run: .\z.ps1 setup
-
-      - name: Build (cross-compile via Docker)
-        shell: pwsh
-        run: .\z.ps1 --with-docker build
-
-      - name: Test (run locally via nanvixd.exe)
-        shell: pwsh
-        run: .\z.ps1 test
