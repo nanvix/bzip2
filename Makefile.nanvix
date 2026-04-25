@@ -160,7 +160,7 @@ test-functional: test-integration
 	@echo "=== bzip2 functional tests ==="
 ifeq ($(PROCESS_MODE),standalone)
 ifdef CONFIG_NANVIX_DOCKER
-	@echo "  Running standalone compress test via nanvixd.elf (Docker, platform=$(PLATFORM))..."
+	@echo "  Running standalone compress test via nanvixd.elf (Docker, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
 	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
 	  mkdir -p /tmp/nanvix-ramfs/tmp && \
 	  cp $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) /tmp/nanvix-ramfs/ && \
@@ -171,7 +171,7 @@ ifdef CONFIG_NANVIX_DOCKER
 	    -- ./bzip2$(EXE) -1 -k -f /tmp/sample1.ref && \
 	  echo "  PASS: sample1 compress standalone" || \
 	  { echo "  FAIL: sample1 compress standalone"; exit 1; }'
-	@echo "  Running standalone decompress test via nanvixd.elf (Docker, platform=$(PLATFORM))..."
+	@echo "  Running standalone decompress test via nanvixd.elf (Docker, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
 	@$(DOCKER_RUN_FUNCTIONAL) sh -c '\
 	  mkdir -p /tmp/nanvix-ramfs/tmp && \
 	  cp $(DOCKER_WORKSPACE_PATH)/bzip2$(EXE) /tmp/nanvix-ramfs/ && \
@@ -183,7 +183,7 @@ ifdef CONFIG_NANVIX_DOCKER
 	  echo "  PASS: sample1 decompress standalone" || \
 	  { echo "  FAIL: sample1 decompress standalone"; exit 1; }'
 else
-	@echo "  Test 1: Standalone compress (sample1, -1, platform=$(PLATFORM))..."
+	@echo "  Test 1: Standalone compress (sample1, -1, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
 	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs/tmp
 	@cp $(abspath bzip2$(EXE)) /tmp/nanvix-ramfs/
 	@cp $(abspath tests/sample1.ref) /tmp/nanvix-ramfs/tmp/sample1.ref
@@ -192,7 +192,7 @@ else
 	  -bin-dir ./bin -ramfs /tmp/rootfs.img \
 	  -- ./bzip2$(EXE) -1 -k -f /tmp/sample1.ref
 	@echo "  PASS: sample1 compress standalone"
-	@echo "  Test 2: Standalone decompress reference (sample1.bz2, platform=$(PLATFORM))..."
+	@echo "  Test 2: Standalone decompress reference (sample1.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
 	@rm -rf /tmp/nanvix-ramfs && mkdir -p /tmp/nanvix-ramfs/tmp
 	@cp $(abspath bzip2$(EXE)) /tmp/nanvix-ramfs/
 	@cp $(abspath tests/sample1.bz2) /tmp/nanvix-ramfs/tmp/sample1_ref.bz2
