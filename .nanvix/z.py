@@ -144,7 +144,17 @@ class Bzip2Build(ZScript):
         Expects bzip2.elf to already exist (from a prior ``./z build
         --with-docker``). Runs compress and decompress tests via
         nanvixd.exe + mkramfs.exe in standalone mode.
+
+        Windows only supports standalone deployment mode. Attempting to
+        run tests in any other mode will raise an error.
         """
+        if self.config.deployment_mode != "standalone":
+            raise RuntimeError(
+                f"Windows tests only support standalone mode "
+                f"(got: {self.config.deployment_mode}). "
+                f"Single-process and multi-process modes are Linux-only."
+            )
+        machine = self.config.machine
         sysroot = self._get_sysroot()
         sysroot_path = Path(sysroot)
 
@@ -181,9 +191,9 @@ class Bzip2Build(ZScript):
 
         bin_dir = str((sysroot_path / "bin").resolve())
 
-        print("=== bzip2 standalone compress test ===")
+        print(f"=== bzip2 {machine} standalone compress test ===")
         self._run_nanvixd_test(
-            label="sample1 compress standalone",
+            label=f"sample1 compress standalone ({machine})",
             bzip2_elf=bzip2_elf,
             test_file=sample_ref,
             test_file_guest_name="sample1.ref",
@@ -191,9 +201,9 @@ class Bzip2Build(ZScript):
             bzip2_args=["-1", "-k", "-f", "/tmp/sample1.ref"],
         )
 
-        print("=== bzip2 standalone decompress test ===")
+        print(f"=== bzip2 {machine} standalone decompress test ===")
         self._run_nanvixd_test(
-            label="sample1 decompress standalone",
+            label=f"sample1 decompress standalone ({machine})",
             bzip2_elf=bzip2_elf,
             test_file=sample_bz2,
             test_file_guest_name="sample1.bz2",
@@ -201,7 +211,7 @@ class Bzip2Build(ZScript):
             bzip2_args=["-d", "-k", "-f", "/tmp/sample1.bz2"],
         )
 
-        print("=== All bzip2 Windows tests PASSED ===")
+        print(f"=== All bzip2 Windows {machine} standalone tests PASSED ===")
 
     def _run_nanvixd_test(
         self,
