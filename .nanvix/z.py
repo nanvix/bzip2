@@ -181,35 +181,53 @@ class Bzip2Build(ZScript):
                 hint="Run `./z build --with-docker` first.",
             )
 
-        sample_ref = self.repo_root / "tests" / "sample1.ref"
-        sample_bz2 = self.repo_root / "tests" / "sample1.bz2"
-        if not sample_ref.is_file() or not sample_bz2.is_file():
-            log.fatal(
-                "Test data not found (tests/sample1.ref or tests/sample1.bz2).",
-                code=EXIT_MISSING_DEP,
-            )
+        _compress_samples = [
+            ("sample1", ".ref", "-1"),
+            ("sample2", ".ref", "-2"),
+            ("sample3", ".ref", "-3"),
+        ]
+        _decompress_samples = ["sample1", "sample2", "sample3"]
+
+        for name, ext, _ in _compress_samples:
+            p = self.repo_root / "tests" / f"{name}{ext}"
+            if not p.is_file():
+                log.fatal(
+                    f"Test data not found (tests/{name}{ext}).",
+                    code=EXIT_MISSING_DEP,
+                )
+        for name in _decompress_samples:
+            p = self.repo_root / "tests" / f"{name}.bz2"
+            if not p.is_file():
+                log.fatal(
+                    f"Test data not found (tests/{name}.bz2).",
+                    code=EXIT_MISSING_DEP,
+                )
 
         bin_dir = str((sysroot_path / "bin").resolve())
 
-        print(f"=== bzip2 {machine} standalone compress test ===")
-        self._run_nanvixd_test(
-            label=f"sample1 compress standalone ({machine})",
-            bzip2_elf=bzip2_elf,
-            test_file=sample_ref,
-            test_file_guest_name="sample1.ref",
-            nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
-            bzip2_args=["-1", "-k", "-f", "/tmp/sample1.ref"],
-        )
+        for name, ext, level in _compress_samples:
+            test_file = self.repo_root / "tests" / f"{name}{ext}"
+            print(f"=== bzip2 {machine} standalone compress test ({name}) ===")
+            self._run_nanvixd_test(
+                label=f"{name} compress standalone ({machine})",
+                bzip2_elf=bzip2_elf,
+                test_file=test_file,
+                test_file_guest_name=f"{name}{ext}",
+                nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
+                bzip2_args=[level, "-k", "-f", f"/tmp/{name}{ext}"],
+            )
 
-        print(f"=== bzip2 {machine} standalone decompress test ===")
-        self._run_nanvixd_test(
-            label=f"sample1 decompress standalone ({machine})",
-            bzip2_elf=bzip2_elf,
-            test_file=sample_bz2,
-            test_file_guest_name="sample1.bz2",
-            nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
-            bzip2_args=["-d", "-k", "-f", "/tmp/sample1.bz2"],
-        )
+        for name in _decompress_samples:
+            test_file = self.repo_root / "tests" / f"{name}.bz2"
+            print(f"=== bzip2 {machine} standalone decompress test ({name}) ===")
+            self._run_nanvixd_test(
+                label=f"{name} decompress standalone ({machine})",
+                bzip2_elf=bzip2_elf,
+                test_file=test_file,
+                test_file_guest_name=f"{name}.bz2",
+                nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
+                bzip2_args=["-d", "-k", "-f", f"/tmp/{name}.bz2"],
+            )
 
         print(f"=== All bzip2 Windows {machine} standalone tests PASSED ===")
 
