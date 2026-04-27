@@ -8,11 +8,3 @@ nanvix-version = "0.12.472"
 platforms = ["hyperlight", "microvm"]
 modes = ["multi-process", "single-process", "standalone"]
 memory = ["128mb", "256mb"]
-
-[[builds.exclude]]
-platform = "hyperlight"
-mode = "single-process"
-
-[[builds.exclude]]
-platform = "hyperlight"
-mode = "multi-process"
