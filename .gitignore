@@ -29,7 +29,7 @@ builddir
 *.res
 *.o
 
-# Nanvix build state (keep .nanvix/z.py tracked)
+# Nanvix
 .nanvix/venv/
 .nanvix/cache/
 .nanvix/sysroot/
@@ -39,3 +39,4 @@ builddir
 dist/
 __pycache__/
 *.elf
+pyrightconfig.json
