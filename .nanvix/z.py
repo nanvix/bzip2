@@ -104,9 +104,9 @@ class Bzip2Build(ZScript):
     # Setup
     # ------------------------------------------------------------------
 
-    def setup(self) -> None:
+    def setup(self) -> bool:
         """Download the Nanvix sysroot."""
-        super().setup()
+        return super().setup()
 
     # ------------------------------------------------------------------
     # Build
