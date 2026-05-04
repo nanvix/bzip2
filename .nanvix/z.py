@@ -73,7 +73,9 @@ class Bzip2Build(ZScript):
             toolchain_p = self.translate_path(Path(toolchain))
 
         args = [
-            "make", "-f", "Makefile.nanvix",
+            "make",
+            "-f",
+            "Makefile.nanvix",
             f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={sysroot_p}",
             f"{_MAKE_VAR_TOOLCHAIN}={toolchain_p}",
@@ -102,9 +104,9 @@ class Bzip2Build(ZScript):
     # Setup
     # ------------------------------------------------------------------
 
-    def setup(self) -> None:
+    def setup(self) -> bool:
         """Download the Nanvix sysroot."""
-        super().setup()
+        return super().setup()
 
     # ------------------------------------------------------------------
     # Build
@@ -212,7 +214,9 @@ class Bzip2Build(ZScript):
                 bzip2_elf=bzip2_elf,
                 test_file=test_file,
                 test_file_guest_name=f"{name}{ext}",
-                nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
+                nanvixd=nanvixd,
+                mkramfs=mkramfs,
+                bin_dir=bin_dir,
                 bzip2_args=[level, "-k", "-f", f"/tmp/{name}{ext}"],
             )
 
@@ -224,7 +228,9 @@ class Bzip2Build(ZScript):
                 bzip2_elf=bzip2_elf,
                 test_file=test_file,
                 test_file_guest_name=f"{name}.bz2",
-                nanvixd=nanvixd, mkramfs=mkramfs, bin_dir=bin_dir,
+                nanvixd=nanvixd,
+                mkramfs=mkramfs,
+                bin_dir=bin_dir,
                 bzip2_args=["-d", "-k", "-f", f"/tmp/{name}.bz2"],
             )
 
@@ -254,19 +260,25 @@ class Bzip2Build(ZScript):
 
             subprocess.run(
                 [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
-                check=True, timeout=60,
+                check=True,
+                timeout=60,
             )
 
             cmd = [
                 str(nanvixd.resolve()),
-                "-bin-dir", bin_dir,
-                "-ramfs", str(ramfs_img),
-                "--", "./bzip2.elf", *bzip2_args,
+                "-bin-dir",
+                bin_dir,
+                "-ramfs",
+                str(ramfs_img),
+                "--",
+                "./bzip2.elf",
+                *bzip2_args,
             ]
             result = subprocess.run(
                 cmd,
                 stdin=subprocess.DEVNULL,
-                capture_output=True, text=True,
+                capture_output=True,
+                text=True,
                 timeout=120,
             )
             if result.stdout:
@@ -274,9 +286,7 @@ class Bzip2Build(ZScript):
             if result.stderr:
                 print(result.stderr, end="")
             if result.returncode != 0:
-                raise RuntimeError(
-                    f"{label} failed (exit code {result.returncode})"
-                )
+                raise RuntimeError(f"{label} failed (exit code {result.returncode})")
             print(f"  PASS: {label}")
         except subprocess.TimeoutExpired:
             raise RuntimeError(f"{label} timed out (120s)")
@@ -308,7 +318,10 @@ class Bzip2Build(ZScript):
             print("Cleaned build artifacts")
             return
         self.run(
-            "make", "-f", "Makefile.nanvix", "clean",
+            "make",
+            "-f",
+            "Makefile.nanvix",
+            "clean",
             cwd=self.repo_root,
         )
 
