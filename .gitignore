@@ -28,15 +28,3 @@ builddir
 *.obj
 *.res
 *.o
-
-# Nanvix
-.nanvix/venv/
-.nanvix/cache/
-.nanvix/sysroot/
-.nanvix/buildroot/
-.nanvix/env.json
-.nanvix/nanvix.lock
-dist/
-__pycache__/
-*.elf
-pyrightconfig.json
