@@ -14,7 +14,6 @@ Usage:
 
 import dataclasses
 import shutil
-import subprocess
 import tempfile
 from pathlib import Path
 
@@ -129,22 +128,155 @@ class Bzip2Build(ZScript):
     def test(self) -> None:
         """Run the test suite.
 
-        On Linux, delegates to the Makefile (smoke + integration + functional).
-        On Windows, runs bzip2.elf through nanvixd.exe in standalone mode
-        with compress/decompress tests.
+        Smoke and integration tests are always delegated to the Makefile.
+        The functional test in standalone mode is handled in Python via
+        make_initrd so that initrd creation is shared across platforms.
         """
         if is_windows():
             self._run_tests_windows()
             return
-        targets = self.targets if self.targets else ["test"]
-        self.run(*self._make_args(*targets), cwd=self.repo_root)
+
+        if self.config.deployment_mode == "standalone":
+            targets = self.targets if self.targets else []
+            # Targets that require the Python functional path.
+            _functional_targets = {"test", "test-functional"}
+            needs_functional = not targets or bool(set(targets) & _functional_targets)
+            # Delegate non-functional targets to the Makefile.
+            make_targets = [t for t in targets if t not in _functional_targets]
+            if not targets:
+                make_targets = ["test-smoke", "test-integration"]
+            elif needs_functional and not make_targets:
+                # Ensure Makefile prerequisites run when only functional
+                # targets are requested (build + smoke/integration).
+                if "test" in targets:
+                    make_targets = ["test-smoke", "test-integration"]
+                else:
+                    make_targets = ["test-integration"]
+            if make_targets:
+                self.run(*self._make_args(*make_targets), cwd=self.repo_root)
+            if needs_functional:
+                self._run_functional_standalone()
+        else:
+            targets = self.targets if self.targets else ["test"]
+            self.run(*self._make_args(*targets), cwd=self.repo_root)
+
+    def _run_functional_standalone(self) -> None:
+        """Run standalone functional tests using make_initrd.
+
+        Creates an initrd bundling bzip2.elf with system daemons via
+        make_initrd, and a ramfs providing /tmp with test data files.
+        """
+        bzip2_elf = self.repo_root / "bzip2.elf"
+        if not bzip2_elf.is_file():
+            log.fatal(
+                "bzip2.elf not found.",
+                code=EXIT_MISSING_DEP,
+                hint="Run `./z build` first.",
+            )
+
+        sysroot = self._get_sysroot()
+        sysroot_path = Path(sysroot)
+        mkramfs = sysroot_path / "bin" / "mkramfs.elf"
+
+        _compress_samples = [
+            ("sample1", ".ref", "-1"),
+            ("sample2", ".ref", "-2"),
+            ("sample3", ".ref", "-3"),
+        ]
+        _decompress_samples = ["sample1", "sample2", "sample3"]
+
+        print("=== bzip2 functional tests ===")
+
+        for name, ext, level in _compress_samples:
+            test_file = self.repo_root / "tests" / f"{name}{ext}"
+            print(f"  Running bzip2 compress test ({name}, {level})...")
+            initrd = self.make_initrd(
+                "bzip2.elf", app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]
+            )
+            try:
+                with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
+                    tmpdir_path = Path(tmpdir)
+                    ramfs_dir = tmpdir_path / "ramfs"
+                    ramfs_dir.mkdir()
+                    (ramfs_dir / "tmp").mkdir(exist_ok=True)
+                    shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}{ext}")
+                    ramfs_img = tmpdir_path / "rootfs.img"
+
+                    self.run(
+                        str(mkramfs),
+                        "-o",
+                        str(ramfs_img),
+                        str(ramfs_dir),
+                        docker=False,
+                    )
+
+                    self.run(
+                        str(sysroot_path / "bin" / "nanvixd.elf"),
+                        "-bin-dir",
+                        str(sysroot_path / "bin"),
+                        "-ramfs",
+                        str(ramfs_img),
+                        "--",
+                        str(initrd),
+                        docker=False,
+                        timeout=120,
+                    )
+            finally:
+                if initrd.exists():
+                    initrd.unlink()
+            print(f"  PASS: {name} compress")
+
+        for name in _decompress_samples:
+            test_file = self.repo_root / "tests" / f"{name}.bz2"
+            # Use -ds for sample3 (small-memory decompression mode).
+            decompress_flag = "-ds" if name == "sample3" else "-d"
+            print(f"  Running bzip2 decompress test ({name})...")
+            initrd = self.make_initrd(
+                "bzip2.elf",
+                app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
+            )
+            try:
+                with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
+                    tmpdir_path = Path(tmpdir)
+                    ramfs_dir = tmpdir_path / "ramfs"
+                    ramfs_dir.mkdir()
+                    (ramfs_dir / "tmp").mkdir(exist_ok=True)
+                    shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}.bz2")
+                    ramfs_img = tmpdir_path / "rootfs.img"
+
+                    self.run(
+                        str(mkramfs),
+                        "-o",
+                        str(ramfs_img),
+                        str(ramfs_dir),
+                        docker=False,
+                    )
+
+                    self.run(
+                        str(sysroot_path / "bin" / "nanvixd.elf"),
+                        "-bin-dir",
+                        str(sysroot_path / "bin"),
+                        "-ramfs",
+                        str(ramfs_img),
+                        "--",
+                        str(initrd),
+                        docker=False,
+                        timeout=120,
+                    )
+            finally:
+                if initrd.exists():
+                    initrd.unlink()
+            print(f"  PASS: {name} decompress")
+
+        print("  PASS: bzip2 functional tests")
+        print("=== All bzip2 tests PASSED ===")
 
     def _run_tests_windows(self) -> None:
         """Run bzip2 standalone tests on Windows using nanvixd.exe.
 
         Expects bzip2.elf to already exist (from a prior ``./z build
-        --with-docker``). Runs compress and decompress tests via
-        nanvixd.exe + mkramfs.exe in standalone mode.
+        --with-docker``). Uses make_initrd to bundle the binary with
+        system daemons, and a ramfs for test input/output files.
 
         Windows only supports standalone deployment mode. Attempting to
         run tests in any other mode will raise an error.
@@ -204,94 +336,101 @@ class Bzip2Build(ZScript):
                     code=EXIT_MISSING_DEP,
                 )
 
-        bin_dir = str((sysroot_path / "bin").resolve())
+        failed: list[str] = []
 
         for name, ext, level in _compress_samples:
             test_file = self.repo_root / "tests" / f"{name}{ext}"
             print(f"=== bzip2 {machine} standalone compress test ({name}) ===")
-            self._run_nanvixd_test(
-                label=f"{name} compress standalone ({machine})",
-                bzip2_elf=bzip2_elf,
-                test_file=test_file,
-                test_file_guest_name=f"{name}{ext}",
-                nanvixd=nanvixd,
-                mkramfs=mkramfs,
-                bin_dir=bin_dir,
-                bzip2_args=[level, "-k", "-f", f"/tmp/{name}{ext}"],
+            initrd = self.make_initrd(
+                "bzip2.elf", app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]
             )
+            try:
+                with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
+                    tmpdir_path = Path(tmpdir)
+                    ramfs_dir = tmpdir_path / "ramfs"
+                    ramfs_dir.mkdir()
+                    (ramfs_dir / "tmp").mkdir(exist_ok=True)
+                    shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}{ext}")
+                    ramfs_img = tmpdir_path / "rootfs.img"
+
+                    self.run(
+                        str(mkramfs),
+                        "-o",
+                        str(ramfs_img),
+                        str(ramfs_dir),
+                        docker=False,
+                    )
+
+                    self.run(
+                        str(nanvixd),
+                        "-bin-dir",
+                        str(sysroot_path / "bin"),
+                        "-ramfs",
+                        str(ramfs_img),
+                        "--",
+                        str(initrd),
+                        docker=False,
+                        timeout=120,
+                    )
+                print(f"  PASS: {name} compress")
+            except SystemExit:
+                print(f"  FAIL: {name} compress")
+                failed.append(f"{name} compress")
+            finally:
+                if initrd.exists():
+                    initrd.unlink()
 
         for name in _decompress_samples:
             test_file = self.repo_root / "tests" / f"{name}.bz2"
+            # Use -ds for sample3 (small-memory decompression mode).
+            decompress_flag = "-ds" if name == "sample3" else "-d"
             print(f"=== bzip2 {machine} standalone decompress test ({name}) ===")
-            self._run_nanvixd_test(
-                label=f"{name} decompress standalone ({machine})",
-                bzip2_elf=bzip2_elf,
-                test_file=test_file,
-                test_file_guest_name=f"{name}.bz2",
-                nanvixd=nanvixd,
-                mkramfs=mkramfs,
-                bin_dir=bin_dir,
-                bzip2_args=["-d", "-k", "-f", f"/tmp/{name}.bz2"],
+            initrd = self.make_initrd(
+                "bzip2.elf",
+                app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
             )
+            try:
+                with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
+                    tmpdir_path = Path(tmpdir)
+                    ramfs_dir = tmpdir_path / "ramfs"
+                    ramfs_dir.mkdir()
+                    (ramfs_dir / "tmp").mkdir(exist_ok=True)
+                    shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}.bz2")
+                    ramfs_img = tmpdir_path / "rootfs.img"
 
+                    self.run(
+                        str(mkramfs),
+                        "-o",
+                        str(ramfs_img),
+                        str(ramfs_dir),
+                        docker=False,
+                    )
+
+                    self.run(
+                        str(nanvixd),
+                        "-bin-dir",
+                        str(sysroot_path / "bin"),
+                        "-ramfs",
+                        str(ramfs_img),
+                        "--",
+                        str(initrd),
+                        docker=False,
+                        timeout=120,
+                    )
+                print(f"  PASS: {name} decompress")
+            except SystemExit:
+                print(f"  FAIL: {name} decompress")
+                failed.append(f"{name} decompress")
+            finally:
+                if initrd.exists():
+                    initrd.unlink()
+
+        if failed:
+            msg = ", ".join(failed)
+            raise RuntimeError(
+                f"bzip2 Windows {machine} standalone tests FAILED: {msg}"
+            )
         print(f"=== All bzip2 Windows {machine} standalone tests PASSED ===")
-
-    def _run_nanvixd_test(
-        self,
-        *,
-        label: str,
-        bzip2_elf: Path,
-        test_file: Path,
-        test_file_guest_name: str,
-        nanvixd: Path,
-        mkramfs: Path,
-        bin_dir: str,
-        bzip2_args: list[str],
-    ) -> None:
-        """Run a single bzip2 test inside nanvixd.exe."""
-        tmpdir_path = Path(tempfile.mkdtemp(prefix="nanvix_bzip2_"))
-        try:
-            ramfs_dir = tmpdir_path / "ramfs"
-            ramfs_dir.mkdir()
-            (ramfs_dir / "tmp").mkdir()
-            shutil.copy2(bzip2_elf, ramfs_dir / "bzip2.elf")
-            shutil.copy2(test_file, ramfs_dir / "tmp" / test_file_guest_name)
-            ramfs_img = tmpdir_path / "rootfs.img"
-
-            subprocess.run(
-                [str(mkramfs.resolve()), "-o", str(ramfs_img), str(ramfs_dir)],
-                check=True,
-                timeout=60,
-            )
-
-            cmd = [
-                str(nanvixd.resolve()),
-                "-bin-dir",
-                bin_dir,
-                "-ramfs",
-                str(ramfs_img),
-                "--",
-                "./bzip2.elf",
-                *bzip2_args,
-            ]
-            result = subprocess.run(
-                cmd,
-                stdin=subprocess.DEVNULL,
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            if result.stdout:
-                print(result.stdout, end="")
-            if result.stderr:
-                print(result.stderr, end="")
-            if result.returncode != 0:
-                raise RuntimeError(f"{label} failed (exit code {result.returncode})")
-            print(f"  PASS: {label}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError(f"{label} timed out (120s)")
-        finally:
-            shutil.rmtree(tmpdir_path, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Release
