@@ -19,7 +19,7 @@ from pathlib import Path
 
 from nanvix_zutil import (
     CFG_SYSROOT,
-    CFG_TOOLCHAIN,
+    TOOLCHAIN_CONTAINER_PATH,
     EXIT_MISSING_DEP,
     DockerConfig,
     ZScript,
@@ -60,7 +60,7 @@ class Bzip2Build(ZScript):
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list."""
         sysroot = self._get_sysroot()
-        toolchain = self.config.get(CFG_TOOLCHAIN, "/opt/nanvix")
+        toolchain = str(TOOLCHAIN_CONTAINER_PATH)
         sysroot_p = self.translate_path(Path(sysroot))
 
         # The toolchain path lives inside the Docker container
@@ -69,7 +69,7 @@ class Bzip2Build(ZScript):
         if self.docker is not None:
             toolchain_p = toolchain
         else:
-            toolchain_p = self.translate_path(Path(toolchain))
+            toolchain_p = toolchain
 
         args = [
             "make",
