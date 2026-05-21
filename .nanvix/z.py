@@ -19,8 +19,8 @@ from pathlib import Path
 
 from nanvix_zutil import (
     CFG_SYSROOT,
-    TOOLCHAIN_CONTAINER_PATH,
     EXIT_MISSING_DEP,
+    TOOLCHAIN_CONTAINER_PATH,
     DockerConfig,
     ZScript,
     is_windows,
@@ -28,7 +28,6 @@ from nanvix_zutil import (
 )
 
 # Makefile variable names (build-system-specific).
-_MAKE_VAR_CONFIG = "CONFIG_NANVIX"
 _MAKE_VAR_HOME = "NANVIX_HOME"
 _MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
 _MAKE_VAR_PLATFORM = "PLATFORM"
@@ -60,22 +59,13 @@ class Bzip2Build(ZScript):
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list."""
         sysroot = self._get_sysroot()
-        toolchain = str(TOOLCHAIN_CONTAINER_PATH)
+        toolchain_p = str(TOOLCHAIN_CONTAINER_PATH)
         sysroot_p = self.translate_path(Path(sysroot))
-
-        # The toolchain path lives inside the Docker container
-        # (/opt/nanvix) and is not a host path. Avoid passing it through
-        # Path() on Windows which would mangle the forward slashes.
-        if self.docker is not None:
-            toolchain_p = toolchain
-        else:
-            toolchain_p = toolchain
 
         args = [
             "make",
             "-f",
             "Makefile.nanvix",
-            f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={sysroot_p}",
             f"{_MAKE_VAR_TOOLCHAIN}={toolchain_p}",
             f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
@@ -119,7 +109,7 @@ class Bzip2Build(ZScript):
         the toolchain container directly. On Windows, pass
         ``--with-docker`` to cross-compile via Docker Desktop.
         """
-        self.run(*self._make_args("all", "bzip2.elf"), cwd=self.repo_root)
+        self.run(*self._make_args("all", "bzip2.elf"), cwd=self.repo_root, docker=True)
 
     # ------------------------------------------------------------------
     # Test
@@ -153,12 +143,14 @@ class Bzip2Build(ZScript):
                 else:
                     make_targets = ["test-integration"]
             if make_targets:
-                self.run(*self._make_args(*make_targets), cwd=self.repo_root)
+                self.run(
+                    *self._make_args(*make_targets), cwd=self.repo_root, docker=False
+                )
             if needs_functional:
                 self._run_functional_standalone()
         else:
             targets = self.targets if self.targets else ["test"]
-            self.run(*self._make_args(*targets), cwd=self.repo_root)
+            self.run(*self._make_args(*targets), cwd=self.repo_root, docker=False)
 
     def _run_functional_standalone(self) -> None:
         """Run standalone functional tests using make_initrd.
@@ -438,8 +430,8 @@ class Bzip2Build(ZScript):
 
     def release(self) -> None:
         """Package the bzip2 release tarball and verify it."""
-        self.run(*self._make_args("package"), cwd=self.repo_root)
-        self.run(*self._make_args("verify-package"), cwd=self.repo_root)
+        self.run(*self._make_args("package"), cwd=self.repo_root, docker=False)
+        self.run(*self._make_args("verify-package"), cwd=self.repo_root, docker=False)
 
     # ------------------------------------------------------------------
     # Clean
@@ -462,6 +454,7 @@ class Bzip2Build(ZScript):
             "Makefile.nanvix",
             "clean",
             cwd=self.repo_root,
+            docker=False,
         )
 
 
