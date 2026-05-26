@@ -25,9 +25,13 @@ from nanvix_zutil import (
     ZScript,
     is_windows,
     log,
+    make_initrd,
+    run,
 )
+from nanvix_zutil.helpers import InitRdArgs
 
 # Makefile variable names (build-system-specific).
+_MAKE_VAR_CONFIG = "CONFIG_NANVIX"
 _MAKE_VAR_HOME = "NANVIX_HOME"
 _MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
 _MAKE_VAR_PLATFORM = "PLATFORM"
@@ -59,13 +63,16 @@ class Bzip2Build(ZScript):
     def _make_args(self, *targets: str) -> list[str]:
         """Build the common make argument list."""
         sysroot = self._get_sysroot()
-        toolchain_p = str(TOOLCHAIN_CONTAINER_PATH)
-        sysroot_p = self.translate_path(Path(sysroot))
+        toolchain_p = TOOLCHAIN_CONTAINER_PATH
+        sysroot_p = (
+            self.docker.translate_path(Path(sysroot)) if self.docker else Path(sysroot)
+        )
 
         args = [
             "make",
             "-f",
             "Makefile.nanvix",
+            f"{_MAKE_VAR_CONFIG}=y",
             f"{_MAKE_VAR_HOME}={sysroot_p}",
             f"{_MAKE_VAR_TOOLCHAIN}={toolchain_p}",
             f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
@@ -102,14 +109,10 @@ class Bzip2Build(ZScript):
     # ------------------------------------------------------------------
 
     def build(self) -> None:
-        """Cross-compile libbz2.a and bzip2.elf for Nanvix.
-
-        Uses ``self.run()`` which transparently wraps in Docker when
-        ``--with-docker`` is passed. On Linux CI the build runs inside
-        the toolchain container directly. On Windows, pass
-        ``--with-docker`` to cross-compile via Docker Desktop.
-        """
-        self.run(*self._make_args("all", "bzip2.elf"), cwd=self.repo_root, docker=True)
+        """Cross-compile libbz2.a and bzip2.elf for Nanvix."""
+        run(
+            *self._make_args("all", "bzip2.elf"), cwd=self.repo_root, docker=self.docker
+        )
 
     # ------------------------------------------------------------------
     # Test
@@ -143,14 +146,12 @@ class Bzip2Build(ZScript):
                 else:
                     make_targets = ["test-integration"]
             if make_targets:
-                self.run(
-                    *self._make_args(*make_targets), cwd=self.repo_root, docker=False
-                )
+                run(*self._make_args(*make_targets), cwd=self.repo_root)
             if needs_functional:
                 self._run_functional_standalone()
         else:
             targets = self.targets if self.targets else ["test"]
-            self.run(*self._make_args(*targets), cwd=self.repo_root, docker=False)
+            run(*self._make_args(*targets), cwd=self.repo_root)
 
     def _run_functional_standalone(self) -> None:
         """Run standalone functional tests using make_initrd.
@@ -182,8 +183,10 @@ class Bzip2Build(ZScript):
         for name, ext, level in _compress_samples:
             test_file = self.repo_root / "tests" / f"{name}{ext}"
             print(f"  Running bzip2 compress test ({name}, {level})...")
-            initrd = self.make_initrd(
-                "bzip2.elf", app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]
+            initrd = make_initrd(
+                self,
+                "bzip2.elf",
+                InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
             try:
                 with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
@@ -194,15 +197,14 @@ class Bzip2Build(ZScript):
                     shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}{ext}")
                     ramfs_img = tmpdir_path / "rootfs.img"
 
-                    self.run(
+                    run(
                         str(mkramfs),
                         "-o",
                         str(ramfs_img),
                         str(ramfs_dir),
-                        docker=False,
                     )
 
-                    self.run(
+                    run(
                         str(sysroot_path / "bin" / "nanvixd.elf"),
                         "-bin-dir",
                         str(sysroot_path / "bin"),
@@ -210,7 +212,6 @@ class Bzip2Build(ZScript):
                         str(ramfs_img),
                         "--",
                         str(initrd),
-                        docker=False,
                         timeout=120,
                     )
             finally:
@@ -223,9 +224,12 @@ class Bzip2Build(ZScript):
             # Use -ds for sample3 (small-memory decompression mode).
             decompress_flag = "-ds" if name == "sample3" else "-d"
             print(f"  Running bzip2 decompress test ({name})...")
-            initrd = self.make_initrd(
+            initrd = make_initrd(
+                self,
                 "bzip2.elf",
-                app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
+                InitRdArgs(
+                    app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
+                ),
             )
             try:
                 with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
@@ -236,15 +240,14 @@ class Bzip2Build(ZScript):
                     shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}.bz2")
                     ramfs_img = tmpdir_path / "rootfs.img"
 
-                    self.run(
+                    run(
                         str(mkramfs),
                         "-o",
                         str(ramfs_img),
                         str(ramfs_dir),
-                        docker=False,
                     )
 
-                    self.run(
+                    run(
                         str(sysroot_path / "bin" / "nanvixd.elf"),
                         "-bin-dir",
                         str(sysroot_path / "bin"),
@@ -252,7 +255,6 @@ class Bzip2Build(ZScript):
                         str(ramfs_img),
                         "--",
                         str(initrd),
-                        docker=False,
                         timeout=120,
                     )
             finally:
@@ -333,8 +335,10 @@ class Bzip2Build(ZScript):
         for name, ext, level in _compress_samples:
             test_file = self.repo_root / "tests" / f"{name}{ext}"
             print(f"=== bzip2 {machine} standalone compress test ({name}) ===")
-            initrd = self.make_initrd(
-                "bzip2.elf", app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]
+            initrd = make_initrd(
+                self,
+                "bzip2.elf",
+                InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
             try:
                 with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
@@ -345,15 +349,14 @@ class Bzip2Build(ZScript):
                     shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}{ext}")
                     ramfs_img = tmpdir_path / "rootfs.img"
 
-                    self.run(
+                    run(
                         str(mkramfs),
                         "-o",
                         str(ramfs_img),
                         str(ramfs_dir),
-                        docker=False,
                     )
 
-                    self.run(
+                    run(
                         str(nanvixd),
                         "-bin-dir",
                         str(sysroot_path / "bin"),
@@ -361,7 +364,6 @@ class Bzip2Build(ZScript):
                         str(ramfs_img),
                         "--",
                         str(initrd),
-                        docker=False,
                         timeout=120,
                     )
                 print(f"  PASS: {name} compress")
@@ -377,9 +379,12 @@ class Bzip2Build(ZScript):
             # Use -ds for sample3 (small-memory decompression mode).
             decompress_flag = "-ds" if name == "sample3" else "-d"
             print(f"=== bzip2 {machine} standalone decompress test ({name}) ===")
-            initrd = self.make_initrd(
+            initrd = make_initrd(
+                self,
                 "bzip2.elf",
-                app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
+                InitRdArgs(
+                    app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
+                ),
             )
             try:
                 with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
@@ -390,15 +395,14 @@ class Bzip2Build(ZScript):
                     shutil.copy2(test_file, ramfs_dir / "tmp" / f"{name}.bz2")
                     ramfs_img = tmpdir_path / "rootfs.img"
 
-                    self.run(
+                    run(
                         str(mkramfs),
                         "-o",
                         str(ramfs_img),
                         str(ramfs_dir),
-                        docker=False,
                     )
 
-                    self.run(
+                    run(
                         str(nanvixd),
                         "-bin-dir",
                         str(sysroot_path / "bin"),
@@ -406,7 +410,6 @@ class Bzip2Build(ZScript):
                         str(ramfs_img),
                         "--",
                         str(initrd),
-                        docker=False,
                         timeout=120,
                     )
                 print(f"  PASS: {name} decompress")
@@ -430,8 +433,8 @@ class Bzip2Build(ZScript):
 
     def release(self) -> None:
         """Package the bzip2 release tarball and verify it."""
-        self.run(*self._make_args("package"), cwd=self.repo_root, docker=False)
-        self.run(*self._make_args("verify-package"), cwd=self.repo_root, docker=False)
+        run(*self._make_args("package"), cwd=self.repo_root)
+        run(*self._make_args("verify-package"), cwd=self.repo_root)
 
     # ------------------------------------------------------------------
     # Clean
@@ -448,13 +451,12 @@ class Bzip2Build(ZScript):
                 shutil.rmtree(dist_dir)
             print("Cleaned build artifacts")
             return
-        self.run(
+        run(
             "make",
             "-f",
             "Makefile.nanvix",
             "clean",
             cwd=self.repo_root,
-            docker=False,
         )
 
 
