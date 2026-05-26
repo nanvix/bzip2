@@ -28,3 +28,6 @@ builddir
 *.obj
 *.res
 *.o
+
+# Nanvix
+bzip2.elf
