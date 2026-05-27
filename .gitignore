@@ -31,3 +31,4 @@ builddir
 
 # Nanvix
 bzip2.elf
+nanvixd_*.log
