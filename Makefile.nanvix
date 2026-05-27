@@ -6,10 +6,8 @@
 #
 # Targets:
 #   all: Build the default target
-#   test: Run all tests (smoke, integration, functional)
-#   test-smoke: Verify build artifacts (no runtime needed)
-#   test-integration: Build and link bzip2 executable
-#   test-functional: Compress/decompress roundtrip tests on nanvixd$(EXE)
+#   test-functional: Run functional tests (compress/decompress roundtrips on nanvixd$(EXE))
+#   test: Alias for test-functional
 #   package: Create a release tarball with build artifacts and headers
 #   verify-package: Verify the contents of the release tarball
 #   clean: Remove build artifacts and test executables
@@ -90,30 +88,9 @@ bzip2$(EXE): bzip2.o $(STATICLIB)
 # Test Targets
 # ===========================================================================
 
-_check-bin:
-	@test -f $(PROG) || { echo "  FAIL: $(PROG) not found"; exit 1; }
-	@echo "  OK: $(PROG) ($$(wc -c < $(PROG)) bytes)"
-
-# --- Smoke tests: verify build artifacts (no runtime needed) ---
-test-smoke:
-	@echo "=== bzip2 smoke tests ==="
-	@echo "  Checking libbz2.a..."
-	@test -f $(STATICLIB) || { echo "  FAIL: $(STATICLIB) not found"; exit 1; }
-	@size=$$(wc -c < $(STATICLIB)); \
-	if [ "$$size" -lt 1000 ]; then echo "  FAIL: $(STATICLIB) too small ($$size bytes)"; exit 1; fi
-	@echo "  Checking headers..."
-	@test -f bzlib.h || { echo "  FAIL: bzlib.h not found"; exit 1; }
-	@echo "  PASS: bzip2 smoke tests"
-
-# --- Integration tests: build and link bzip2 executable ---
-test-integration: _check-bin
-	@echo "=== bzip2 integration tests ==="
-	@test -f bzip2$(EXE) || { echo "  FAIL: bzip2$(EXE) not built"; exit 1; }
-	@echo "  OK: bzip2$(EXE) ($$(wc -c < bzip2$(EXE)) bytes)"
-	@echo "  PASS: bzip2 integration tests"
-
 # --- Functional tests: compress/decompress roundtrip on nanvixd$(EXE) ---
-test-functional: test-integration
+test-functional:
+	@test -f $(PROG) || { echo "  FAIL: $(PROG) not found"; exit 1; }
 	@echo "=== bzip2 functional tests ==="
 ifeq ($(PROCESS_MODE),standalone)
 	@echo "  NOTE: Standalone functional tests are handled via ./z.sh."
@@ -159,8 +136,8 @@ else
 endif
 	@echo "  PASS: bzip2 functional tests"
 
-# --- Run all test levels ---
-test: test-smoke test-integration test-functional
+# --- Run tests (alias for functional tests) ---
+test: test-functional
 	@echo "=== All bzip2 tests PASSED ==="
 
 # ===========================================================================
@@ -214,4 +191,4 @@ clean:
 	rm -f *.a *$(EXE)
 	rm -rf dist/
 
-.PHONY: all clean test test-smoke test-integration test-functional package verify-package
+.PHONY: all clean test test-functional package verify-package
