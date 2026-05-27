@@ -19,6 +19,7 @@ from pathlib import Path
 
 from nanvix_zutil import (
     CFG_SYSROOT,
+    EXIT_INVALID_ARGS,
     EXIT_MISSING_DEP,
     TOOLCHAIN_CONTAINER_PATH,
     DockerConfig,
@@ -118,40 +119,39 @@ class Bzip2Build(ZScript):
     # Test
     # ------------------------------------------------------------------
 
-    def test(self) -> None:
-        """Run the test suite.
+    # Test targets accepted on the CLI.  Only functional tests remain
+    # after the smoke/integration tiers were removed from Makefile.nanvix.
+    _SUPPORTED_TEST_TARGETS = frozenset({"test", "test-functional"})
 
-        Smoke and integration tests are always delegated to the Makefile.
-        The functional test in standalone mode is handled in Python via
-        make_initrd so that initrd creation is shared across platforms.
+    def test(self) -> None:
+        """Run the functional test suite.
+
+        Compresses and decompresses sample data through the bzip2 binary
+        running under nanvixd.  In standalone mode the run is driven from
+        Python (via :func:`make_initrd`); in single-/multi-process modes
+        it is delegated to ``make test-functional``.
+
+        Any CLI-supplied targets (``./z test <target>...``) must be a
+        subset of :attr:`_SUPPORTED_TEST_TARGETS`; unknown targets are
+        rejected so they are not silently dropped.
         """
+        targets = self.targets or []
+        unknown = [t for t in targets if t not in self._SUPPORTED_TEST_TARGETS]
+        if unknown:
+            log.fatal(
+                f"Unsupported test target(s): {', '.join(unknown)}. "
+                f"Supported: {', '.join(sorted(self._SUPPORTED_TEST_TARGETS))}.",
+                code=EXIT_INVALID_ARGS,
+            )
+
         if is_windows():
             self._run_tests_windows()
             return
 
         if self.config.deployment_mode == "standalone":
-            targets = self.targets if self.targets else []
-            # Targets that require the Python functional path.
-            _functional_targets = {"test", "test-functional"}
-            needs_functional = not targets or bool(set(targets) & _functional_targets)
-            # Delegate non-functional targets to the Makefile.
-            make_targets = [t for t in targets if t not in _functional_targets]
-            if not targets:
-                make_targets = ["test-smoke", "test-integration"]
-            elif needs_functional and not make_targets:
-                # Ensure Makefile prerequisites run when only functional
-                # targets are requested (build + smoke/integration).
-                if "test" in targets:
-                    make_targets = ["test-smoke", "test-integration"]
-                else:
-                    make_targets = ["test-integration"]
-            if make_targets:
-                run(*self._make_args(*make_targets), cwd=self.repo_root)
-            if needs_functional:
-                self._run_functional_standalone()
+            self._run_functional_standalone()
         else:
-            targets = self.targets if self.targets else ["test"]
-            run(*self._make_args(*targets), cwd=self.repo_root)
+            run(*self._make_args("test-functional"), cwd=self.repo_root)
 
     def _run_functional_standalone(self) -> None:
         """Run standalone functional tests using make_initrd.
