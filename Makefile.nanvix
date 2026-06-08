@@ -23,11 +23,12 @@
 
 .DEFAULT_GOAL=all
 EXE = .elf
-_NANVIX_DOCKER_BUILD_GOALS := all bzip2$(EXE)
+_NANVIX_DOCKER_BUILD_GOALS := all install bzip2$(EXE)
 _NANVIX_GOALS := $(or $(MAKECMDGOALS),$(.DEFAULT_GOAL))
 
 # Ensure required variables are defined
-_REQUIRED := PLATFORM PROCESS_MODE MEMORY_SIZE NANVIX_HOME NANVIX_TOOLCHAIN
+_REQUIRED := PLATFORM PROCESS_MODE MEMORY_SIZE NANVIX_HOME NANVIX_TOOLCHAIN \
+    LIB_OUT INCLUDE_OUT BIN_OUT
 ifneq ($(filter-out clean,$(_NANVIX_GOALS)),)
   $(foreach v,$(_REQUIRED),\
     $(if $($v),,$(error Required variable $v not set))\
@@ -40,7 +41,10 @@ STATICLIB = libbz2.a
 OBJS = blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
 PROG := bzip2$(EXE)
 SYSROOT_PATH := $(abspath $(NANVIX_HOME))
-RELEASE_ARTIFACTS := $(STATICLIB) bzlib.h $(PROG)
+LIB_ARTIFACTS := $(STATICLIB)
+INCLUDE_ARTIFACTS := bzlib.h
+BIN_ARTIFACTS := $(PROG)
+RELEASE_ARTIFACTS := $(LIB_ARTIFACTS) $(INCLUDE_ARTIFACTS) $(BIN_ARTIFACTS)
 
 # ===========================================================================
 # Build Mode Variables
@@ -73,7 +77,15 @@ NANVIX_LIBS := -Wl,--start-group \
 # Build Targets
 # ===========================================================================
 
-all: $(STATICLIB)
+all: $(STATICLIB) $(PROG) install
+
+# Stage built artifacts into the release output tree so that
+# `./z release` (which packages release_dir()) can find them.
+install: $(STATICLIB) $(PROG)
+	@mkdir -p $(LIB_OUT) $(INCLUDE_OUT) $(BIN_OUT)
+	cp -f $(LIB_ARTIFACTS)     $(LIB_OUT)/
+	cp -f $(INCLUDE_ARTIFACTS) $(INCLUDE_OUT)/
+	cp -f $(BIN_ARTIFACTS)     $(BIN_OUT)/
 
 $(STATICLIB): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
@@ -191,4 +203,4 @@ clean:
 	rm -f *.a *$(EXE)
 	rm -rf dist/
 
-.PHONY: all clean test test-functional package verify-package
+.PHONY: all install clean test test-functional package verify-package

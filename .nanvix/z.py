@@ -30,6 +30,15 @@ from nanvix_zutil import (
     run,
 )
 from nanvix_zutil.helpers import InitRdArgs
+from nanvix_zutil.paths import (
+    bin_out,
+    dist_dir,
+    include_out,
+    lib_out,
+    nanvix_root,
+    out_dir,
+    repo_root,
+)
 
 # Makefile variable names (build-system-specific).
 _MAKE_VAR_CONFIG = "CONFIG_NANVIX"
@@ -38,13 +47,6 @@ _MAKE_VAR_TOOLCHAIN = "NANVIX_TOOLCHAIN"
 _MAKE_VAR_PLATFORM = "PLATFORM"
 _MAKE_VAR_PROCESS_MODE = "PROCESS_MODE"
 _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
-
-# Build output files that must be copied back from the Docker container
-# to the host workspace after a Windows Docker build.
-_BUILD_OUTPUT_FILES = [
-    "libbz2.a",
-    "bzip2.elf",
-]
 
 
 class Bzip2Build(ZScript):
@@ -69,6 +71,9 @@ class Bzip2Build(ZScript):
             self.docker.translate_path(Path(sysroot)) if self.docker else Path(sysroot)
         )
 
+        def translate(p: Path):
+            return self.docker.translate_path(p) if self.docker else p
+
         args = [
             "make",
             "-f",
@@ -79,6 +84,12 @@ class Bzip2Build(ZScript):
             f"{_MAKE_VAR_PLATFORM}={self.config.machine}",
             f"{_MAKE_VAR_PROCESS_MODE}={self.config.deployment_mode}",
             f"{_MAKE_VAR_MEMORY_SIZE}={self.config.memory_size}",
+            f"NANVIX_ROOT={translate(nanvix_root())}",
+            f"OUT_DIR={translate(out_dir())}",
+            f"DIST_DIR={translate(dist_dir())}",
+            f"LIB_OUT={translate(lib_out())}",
+            f"INCLUDE_OUT={translate(include_out())}",
+            f"BIN_OUT={translate(bin_out())}",
         ]
         args.extend(targets)
         return args
@@ -95,7 +106,21 @@ class Bzip2Build(ZScript):
         workspace after a Windows Docker build.
         """
         cfg = super().docker_config(image)
-        return dataclasses.replace(cfg, output_files=_BUILD_OUTPUT_FILES)
+        # Build artifacts produced inside the container that must be copied
+        # back to the host workspace so that `./z test` and `./z release`
+        # can find them. Paths are relative to the workspace mount root
+        # (i.e. repo_root()).
+        root = repo_root()
+        output_files = [
+            # In-tree build artifacts (legacy locations used by tests).
+            "libbz2.a",
+            "bzip2.elf",
+            # Installed artifacts staged for `./z release` / packaging.
+            str((lib_out() / "libbz2.a").relative_to(root)),
+            str((include_out() / "bzlib.h").relative_to(root)),
+            str((bin_out() / "bzip2.elf").relative_to(root)),
+        ]
+        return dataclasses.replace(cfg, output_files=output_files)
 
     # ------------------------------------------------------------------
     # Setup
@@ -111,9 +136,7 @@ class Bzip2Build(ZScript):
 
     def build(self) -> None:
         """Cross-compile libbz2.a and bzip2.elf for Nanvix."""
-        run(
-            *self._make_args("all", "bzip2.elf"), cwd=self.repo_root, docker=self.docker
-        )
+        run(*self._make_args("all", "bzip2.elf"), cwd=repo_root(), docker=self.docker)
 
     # ------------------------------------------------------------------
     # Test
@@ -151,7 +174,7 @@ class Bzip2Build(ZScript):
         if self.config.deployment_mode == "standalone":
             self._run_functional_standalone()
         else:
-            run(*self._make_args("test-functional"), cwd=self.repo_root)
+            run(*self._make_args("test-functional"), cwd=repo_root())
 
     def _run_functional_standalone(self) -> None:
         """Run standalone functional tests using make_initrd.
@@ -159,7 +182,7 @@ class Bzip2Build(ZScript):
         Creates an initrd bundling bzip2.elf with system daemons via
         make_initrd, and a ramfs providing /tmp with test data files.
         """
-        bzip2_elf = self.repo_root / "bzip2.elf"
+        bzip2_elf = repo_root() / "bzip2.elf"
         if not bzip2_elf.is_file():
             log.fatal(
                 "bzip2.elf not found.",
@@ -181,12 +204,13 @@ class Bzip2Build(ZScript):
         print("=== bzip2 functional tests ===")
 
         for name, ext, level in _compress_samples:
-            test_file = self.repo_root / "tests" / f"{name}{ext}"
+            test_file = repo_root() / "tests" / f"{name}{ext}"
             print(f"  Running bzip2 compress test ({name}, {level})...")
             initrd = make_initrd(
                 self,
                 "bzip2.elf",
-                InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
+                test=True,
+                args=InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
             try:
                 with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
@@ -220,14 +244,15 @@ class Bzip2Build(ZScript):
             print(f"  PASS: {name} compress")
 
         for name in _decompress_samples:
-            test_file = self.repo_root / "tests" / f"{name}.bz2"
+            test_file = repo_root() / "tests" / f"{name}.bz2"
             # Use -ds for sample3 (small-memory decompression mode).
             decompress_flag = "-ds" if name == "sample3" else "-d"
             print(f"  Running bzip2 decompress test ({name})...")
             initrd = make_initrd(
                 self,
                 "bzip2.elf",
-                InitRdArgs(
+                test=True,
+                args=InitRdArgs(
                     app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
                 ),
             )
@@ -300,7 +325,7 @@ class Bzip2Build(ZScript):
                 hint="Run `./z setup` first.",
             )
 
-        bzip2_elf = self.repo_root / "bzip2.elf"
+        bzip2_elf = repo_root() / "bzip2.elf"
         if not bzip2_elf.is_file():
             log.fatal(
                 "bzip2.elf not found.",
@@ -316,14 +341,14 @@ class Bzip2Build(ZScript):
         _decompress_samples = ["sample1", "sample2", "sample3"]
 
         for name, ext, _ in _compress_samples:
-            p = self.repo_root / "tests" / f"{name}{ext}"
+            p = repo_root() / "tests" / f"{name}{ext}"
             if not p.is_file():
                 log.fatal(
                     f"Test data not found (tests/{name}{ext}).",
                     code=EXIT_MISSING_DEP,
                 )
         for name in _decompress_samples:
-            p = self.repo_root / "tests" / f"{name}.bz2"
+            p = repo_root() / "tests" / f"{name}.bz2"
             if not p.is_file():
                 log.fatal(
                     f"Test data not found (tests/{name}.bz2).",
@@ -333,12 +358,13 @@ class Bzip2Build(ZScript):
         failed: list[str] = []
 
         for name, ext, level in _compress_samples:
-            test_file = self.repo_root / "tests" / f"{name}{ext}"
+            test_file = repo_root() / "tests" / f"{name}{ext}"
             print(f"=== bzip2 {machine} standalone compress test ({name}) ===")
             initrd = make_initrd(
                 self,
                 "bzip2.elf",
-                InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
+                test=True,
+                args=InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
             try:
                 with tempfile.TemporaryDirectory(prefix="nanvix_bzip2_") as tmpdir:
@@ -375,14 +401,15 @@ class Bzip2Build(ZScript):
                     initrd.unlink()
 
         for name in _decompress_samples:
-            test_file = self.repo_root / "tests" / f"{name}.bz2"
+            test_file = repo_root() / "tests" / f"{name}.bz2"
             # Use -ds for sample3 (small-memory decompression mode).
             decompress_flag = "-ds" if name == "sample3" else "-d"
             print(f"=== bzip2 {machine} standalone decompress test ({name}) ===")
             initrd = make_initrd(
                 self,
                 "bzip2.elf",
-                InitRdArgs(
+                test=True,
+                args=InitRdArgs(
                     app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
                 ),
             )
@@ -431,10 +458,10 @@ class Bzip2Build(ZScript):
     # Release
     # ------------------------------------------------------------------
 
-    def release(self) -> None:
-        """Package the bzip2 release tarball and verify it."""
-        run(*self._make_args("package"), cwd=self.repo_root)
-        run(*self._make_args("verify-package"), cwd=self.repo_root)
+    # def release(self) -> None:
+    #     """Package the bzip2 release tarball and verify it."""
+    #     run(*self._make_args("package"), cwd=repo_root())
+    #     run(*self._make_args("verify-package"), cwd=repo_root())
 
     # ------------------------------------------------------------------
     # Clean
@@ -444,9 +471,9 @@ class Bzip2Build(ZScript):
         """Remove build artifacts."""
         if is_windows():
             for pattern in ["*.o", "*.a", "*.elf"]:
-                for f in self.repo_root.glob(pattern):
+                for f in repo_root().glob(pattern):
                     f.unlink()
-            dist_dir = self.repo_root / "dist"
+            dist_dir = repo_root() / "dist"
             if dist_dir.exists():
                 shutil.rmtree(dist_dir)
             print("Cleaned build artifacts")
@@ -456,7 +483,7 @@ class Bzip2Build(ZScript):
             "-f",
             "Makefile.nanvix",
             "clean",
-            cwd=self.repo_root,
+            cwd=repo_root(),
         )
 
 
