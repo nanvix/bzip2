@@ -117,9 +117,11 @@ class Bzip2Build(ZScript):
         output_files = [
             # In-tree build artifacts (legacy locations used by tests).
             "libbz2.a",
+            "libbz2.so",
             "bzip2.elf",
             # Installed artifacts staged for `./z release` / packaging.
             str((lib_out() / "libbz2.a").relative_to(root)),
+            str((lib_out() / "libbz2.so").relative_to(root)),
             str((include_out() / "bzlib.h").relative_to(root)),
             str((bin_out() / "bzip2.elf").relative_to(root)),
         ]
@@ -138,7 +140,7 @@ class Bzip2Build(ZScript):
     # ------------------------------------------------------------------
 
     def build(self) -> None:
-        """Cross-compile libbz2.a and bzip2.elf for Nanvix."""
+        """Cross-compile libbz2.a, libbz2.so, and bzip2.elf for Nanvix."""
         run(*self._make_args("all", "bzip2.elf"), cwd=repo_root(), docker=self.docker)
 
     # ------------------------------------------------------------------
@@ -489,7 +491,7 @@ class Bzip2Build(ZScript):
     def clean(self) -> None:
         """Remove build artifacts."""
         if is_windows():
-            for pattern in ["*.o", "*.a", "*.elf"]:
+            for pattern in ["*.o", "*.a", "*.so", "*.elf"]:
                 for f in repo_root().glob(pattern):
                     f.unlink()
             dist_dir = repo_root() / "dist"
