@@ -38,6 +38,7 @@ from nanvix_zutil.paths import (
     nanvix_root,
     out_dir,
     repo_root,
+    test_out,
 )
 
 # Makefile variable names (build-system-specific).
@@ -137,6 +138,15 @@ class Bzip2Build(ZScript):
     def build(self) -> None:
         """Cross-compile libbz2.a and bzip2.elf for Nanvix."""
         run(*self._make_args("all", "bzip2.elf"), cwd=repo_root(), docker=self.docker)
+        # Stage bzip2.elf into test_out() so the windows-test artifact
+        # upload in nanvix/workflows@v2.3.0 picks it up (upload glob is
+        # `.nanvix/out/test/**/*.{elf,so}`). The Makefile installs to
+        # BIN_OUT for the release tree; we keep that path intact and add
+        # the test_out copy here on the host. Works for both native and
+        # docker builds because `output_files` already copies bzip2.elf
+        # back to repo_root() on Windows.
+        test_out().mkdir(parents=True, exist_ok=True)
+        shutil.copy2(repo_root() / "bzip2.elf", test_out() / "bzip2.elf")
 
     # ------------------------------------------------------------------
     # Test
@@ -326,12 +336,30 @@ class Bzip2Build(ZScript):
             )
 
         bzip2_elf = repo_root() / "bzip2.elf"
-        if not bzip2_elf.is_file():
+        # Source bzip2.elf from `test_out()` (the windows-ci artifact
+        # overlay location, populated by `_stage_artifacts_elf_so` in
+        # nanvix_scripts and by the canonical workflow's download-artifact
+        # step at `.nanvix/out/test/`) with repo_root() as legacy fallback.
+        # `make_initrd` in zutils v0.13.0 hardcodes `repo_root() / app`,
+        # so stage a copy at the repo root when the binary is discovered
+        # elsewhere. `staged_created` is False whenever the destination
+        # pre-existed, so cleanup never deletes a developer's build output.
+        bzip2_elf_src: Path | None = None
+        for candidate in [test_out() / "bzip2.elf", bzip2_elf]:
+            if candidate.is_file():
+                bzip2_elf_src = candidate
+                break
+        if bzip2_elf_src is None:
             log.fatal(
                 "bzip2.elf not found.",
                 code=EXIT_MISSING_DEP,
                 hint="Run `./z build --with-docker` first.",
             )
+        staged_created = False
+        if bzip2_elf_src.resolve() != bzip2_elf.resolve():
+            preexisted = bzip2_elf.exists()
+            shutil.copy2(bzip2_elf_src, bzip2_elf)
+            staged_created = not preexisted
 
         _compress_samples = [
             ("sample1", ".ref", "-1"),
@@ -446,6 +474,9 @@ class Bzip2Build(ZScript):
             finally:
                 if initrd.exists():
                     initrd.unlink()
+
+        if staged_created:
+            bzip2_elf.unlink(missing_ok=True)
 
         if failed:
             msg = ", ".join(failed)
