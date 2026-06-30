@@ -218,8 +218,8 @@ class Bzip2Build(ZScript):
             print(f"  Running bzip2 compress test ({name}, {level})...")
             initrd = make_initrd(
                 self,
-                "bzip2.elf",
-                test=True,
+                repo_root() / "bzip2.elf",
+                test_out(),
                 args=InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
             try:
@@ -260,8 +260,8 @@ class Bzip2Build(ZScript):
             print(f"  Running bzip2 decompress test ({name})...")
             initrd = make_initrd(
                 self,
-                "bzip2.elf",
-                test=True,
+                repo_root() / "bzip2.elf",
+                test_out(),
                 args=InitRdArgs(
                     app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
                 ),
@@ -390,8 +390,8 @@ class Bzip2Build(ZScript):
             print(f"=== bzip2 {machine} standalone compress test ({name}) ===")
             initrd = make_initrd(
                 self,
-                "bzip2.elf",
-                test=True,
+                repo_root() / "bzip2.elf",
+                test_out(),
                 args=InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
             try:
@@ -435,8 +435,8 @@ class Bzip2Build(ZScript):
             print(f"=== bzip2 {machine} standalone decompress test ({name}) ===")
             initrd = make_initrd(
                 self,
-                "bzip2.elf",
-                test=True,
+                repo_root() / "bzip2.elf",
+                test_out(),
                 args=InitRdArgs(
                     app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
                 ),
