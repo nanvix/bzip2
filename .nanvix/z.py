@@ -335,17 +335,10 @@ class Bzip2Build(ZScript):
                 hint="Run `./z setup` first.",
             )
 
-        bzip2_elf = repo_root() / "bzip2.elf"
-        # Source bzip2.elf from `test_out()` (the windows-ci artifact
-        # overlay location, populated by `_stage_artifacts_elf_so` in
-        # nanvix_scripts and by the canonical workflow's download-artifact
-        # step at `.nanvix/out/test/`) with repo_root() as legacy fallback.
-        # `make_initrd` in zutils v0.13.0 hardcodes `repo_root() / app`,
-        # so stage a copy at the repo root when the binary is discovered
-        # elsewhere. `staged_created` is False whenever the destination
-        # pre-existed, so cleanup never deletes a developer's build output.
+        # Locate bzip2.elf: prefer the windows-ci artifact overlay at
+        # `test_out()`, fall back to a repo-root build.
         bzip2_elf_src: Path | None = None
-        for candidate in [test_out() / "bzip2.elf", bzip2_elf]:
+        for candidate in [test_out() / "bzip2.elf", repo_root() / "bzip2.elf"]:
             if candidate.is_file():
                 bzip2_elf_src = candidate
                 break
@@ -355,11 +348,6 @@ class Bzip2Build(ZScript):
                 code=EXIT_MISSING_DEP,
                 hint="Run `./z build --with-docker` first.",
             )
-        staged_created = False
-        if bzip2_elf_src.resolve() != bzip2_elf.resolve():
-            preexisted = bzip2_elf.exists()
-            shutil.copy2(bzip2_elf_src, bzip2_elf)
-            staged_created = not preexisted
 
         _compress_samples = [
             ("sample1", ".ref", "-1"),
@@ -390,7 +378,7 @@ class Bzip2Build(ZScript):
             print(f"=== bzip2 {machine} standalone compress test ({name}) ===")
             initrd = make_initrd(
                 self,
-                repo_root() / "bzip2.elf",
+                bzip2_elf_src,
                 test_out(),
                 args=InitRdArgs(app_args=[level, "-k", "-f", f"/tmp/{name}{ext}"]),
             )
@@ -435,7 +423,7 @@ class Bzip2Build(ZScript):
             print(f"=== bzip2 {machine} standalone decompress test ({name}) ===")
             initrd = make_initrd(
                 self,
-                repo_root() / "bzip2.elf",
+                bzip2_elf_src,
                 test_out(),
                 args=InitRdArgs(
                     app_args=[decompress_flag, "-k", "-f", f"/tmp/{name}.bz2"],
@@ -474,9 +462,6 @@ class Bzip2Build(ZScript):
             finally:
                 if initrd.exists():
                     initrd.unlink()
-
-        if staged_created:
-            bzip2_elf.unlink(missing_ok=True)
 
         if failed:
             msg = ", ".join(failed)
