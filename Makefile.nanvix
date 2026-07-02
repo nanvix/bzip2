@@ -35,7 +35,14 @@ ifneq ($(filter-out clean,$(_NANVIX_GOALS)),)
   )
 endif
 
-CFLAGS = -O2 -Wall -D_FILE_OFFSET_BITS=64 -DBZ_UNIX -DBZ_LCCWIN32=0
+# LLVM cross-compilation target: the Nanvix i686 guest ABI provided by the
+# toolchain image (ghcr.io/nanvix/llvm-project). clang targets
+# i686-unknown-nanvix natively, so it compiles against the toolchain's bundled
+# Nanvix sysroot headers (/opt/nanvix/usr/include) directly -- no
+# -ffreestanding / -nostdinc / -isystem overrides are required.
+NANVIX_TARGET := i686-unknown-nanvix
+CFLAGS = --target=$(NANVIX_TARGET) -m32 -march=pentiumpro \
+    -std=c17 -O2 -Wall -D_FILE_OFFSET_BITS=64 -DBZ_UNIX -DBZ_LCCWIN32=0
 ARFLAGS = rcs
 STATICLIB = libbz2.a
 OBJS = blocksort.o huffman.o crctable.o randtable.o compress.o decompress.o bzlib.o
@@ -58,26 +65,29 @@ ifneq ($(_BUILD),)
     $(error Cannot mix build and non-build targets. Build targets: $(_NANVIX_DOCKER_BUILD_GOALS))
   endif
 
-  ifeq ($(wildcard $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc),)
-      $(error Nanvix toolchain not found at $(NANVIX_TOOLCHAIN))
+  ifeq ($(wildcard $(NANVIX_TOOLCHAIN)/bin/clang),)
+      $(error Nanvix LLVM toolchain (clang) not found at $(NANVIX_TOOLCHAIN))
   endif
 endif
 
-CC := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-gcc
-AR := $(NANVIX_TOOLCHAIN)/bin/i686-nanvix-ar
-# Since Nanvix 0.16.19, process startup (`_start`) lives in libnvx_crt0.a; it
-# drives `__nanvix_libc_start_main` in libposix.a. It must be linked first so
-# its strong `_start` overrides the toolchain's weak no-op stub (otherwise the
-# guest never reaches main and hangs). The wildcard keeps this a no-op on older
-# Nanvix releases that do not ship libnvx_crt0.a. libnvx_crt0.a and libposix.a
-# share some kcall objects, so allow multiple definitions to resolve the overlap.
-NANVIX_LDFLAGS := -T$(SYSROOT_PATH)/lib/user.ld -static -Wl,-z,noexecstack -Wl,--allow-multiple-definition
-NANVIX_LIBS := -Wl,--start-group \
-  $(wildcard $(SYSROOT_PATH)/lib/libnvx_crt0.a) \
-  $(SYSROOT_PATH)/lib/libposix.a \
-  $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libc.a \
-  $(NANVIX_TOOLCHAIN)/i686-nanvix/lib/libm.a \
-  -Wl,--end-group
+CC := $(NANVIX_TOOLCHAIN)/bin/clang
+LD := $(NANVIX_TOOLCHAIN)/bin/ld.lld
+AR := $(NANVIX_TOOLCHAIN)/bin/llvm-ar
+RANLIB := $(NANVIX_TOOLCHAIN)/bin/llvm-ranlib
+# Guest link (LLVM), mirroring the Nanvix OS guest C-app link:
+#   * ld.lld performs a bare ELF i386 link driven by the guest `user.ld` script
+#     (ENTRY(_do_start), BASE_ADDR 0x40000000).
+#   * Process startup lives in libnvx_crt0.a: its `_do_start` drives
+#     `__nanvix_libc_start_main` (in libc.a), which in turn calls `main`. There
+#     is no separate crt object to link.
+#   * `-z muldefs` lets libnvx_crt0.a and libc.a resolve the low-level objects
+#     they share (both define, e.g., `_do_start_thread`).
+NANVIX_LD_SCRIPT := $(SYSROOT_PATH)/lib/user.ld
+NANVIX_LDFLAGS := -melf_i386 -z noexecstack -z muldefs -T $(NANVIX_LD_SCRIPT) --entry=_do_start
+# System archives, resolved as a group together with libbz2.a at link time.
+NANVIX_LIBS := $(SYSROOT_PATH)/lib/libnvx_crt0.a \
+  $(SYSROOT_PATH)/lib/libc.a \
+  $(SYSROOT_PATH)/lib/libm.a
 
 
 # ===========================================================================
@@ -96,9 +106,10 @@ install: $(STATICLIB) $(PROG)
 
 $(STATICLIB): $(OBJS)
 	$(AR) $(ARFLAGS) $@ $(OBJS)
+	-@ ($(RANLIB) $@ || true) >/dev/null 2>&1
 
 bzip2$(EXE): bzip2.o $(STATICLIB)
-	$(CC) $(CFLAGS) $(NANVIX_LDFLAGS) -o $@ bzip2.o -L. -lbz2 $(NANVIX_LIBS)
+	$(LD) $(NANVIX_LDFLAGS) -o $@ bzip2.o --start-group $(STATICLIB) $(NANVIX_LIBS) --end-group
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c -o $@ $<
@@ -107,52 +118,15 @@ bzip2$(EXE): bzip2.o $(STATICLIB)
 # Test Targets
 # ===========================================================================
 
-# --- Functional tests: compress/decompress roundtrip on nanvixd$(EXE) ---
+# --- Functional tests: standalone compress/decompress roundtrips on nanvixd$(EXE) ---
+# Only the standalone deployment mode is supported. The run is driven from
+# Python (make_initrd + ramfs) via ./z.sh, so delegate to it here.
 test-functional:
 	@test -f $(PROG) || { echo "  FAIL: $(PROG) not found"; exit 1; }
 	@echo "=== bzip2 functional tests ==="
-ifeq ($(PROCESS_MODE),standalone)
 	@echo "  NOTE: Standalone functional tests are handled via ./z.sh."
-	@echo "  Delegating to: ./z.sh test test-functional"
-	@./z.sh test test-functional
-else
-	@echo "  Test 1: Compress/decompress roundtrip (sample1, -1, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample1.ref) /tmp/sample1.ref
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
-	@cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
-	@cmp /tmp/sample1_rt $(abspath tests/sample1.ref)
-	@echo "  PASS: sample1 roundtrip"
-	@echo "  Test 2: Compress/decompress roundtrip (sample2, -2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample2.ref) /tmp/sample2.ref
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
-	@cp /tmp/sample2.ref.bz2 /tmp/sample2_rt.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
-	@cmp /tmp/sample2_rt $(abspath tests/sample2.ref)
-	@echo "  PASS: sample2 roundtrip"
-	@echo "  Test 3: Compress/decompress roundtrip (sample3, -3, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample3.ref) /tmp/sample3.ref
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
-	@cp /tmp/sample3.ref.bz2 /tmp/sample3_rt.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
-	@cmp /tmp/sample3_rt $(abspath tests/sample3.ref)
-	@echo "  PASS: sample3 roundtrip"
-	@echo "  Test 4: Decompress reference (sample1.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
-	@cmp /tmp/sample1_ref $(abspath tests/sample1.ref)
-	@echo "  PASS: sample1 decompress reference"
-	@echo "  Test 5: Decompress reference (sample2.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample2.bz2) /tmp/sample2_ref.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
-	@cmp /tmp/sample2_ref $(abspath tests/sample2.ref)
-	@echo "  PASS: sample2 decompress reference"
-	@echo "  Test 6: Decompress reference (sample3.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample3.bz2) /tmp/sample3_ref.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
-	@cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
-	@echo "  PASS: sample3 decompress reference"
-endif
+	@echo "  Delegating to: ./z.sh test -- test-functional"
+	@./z.sh test -- test-functional
 	@echo "  PASS: bzip2 functional tests"
 
 # --- Run tests (alias for functional tests) ---
