@@ -160,9 +160,9 @@ class Bzip2Build(ZScript):
         """Run the functional test suite.
 
         Compresses and decompresses sample data through the bzip2 binary
-        running under nanvixd.  In standalone mode the run is driven from
-        Python (via :func:`make_initrd`); in single-/multi-process modes
-        it is delegated to ``make test-functional``.
+        running under nanvixd.  Only the standalone deployment mode is
+        supported, so the run is always driven from Python (via
+        :func:`make_initrd`).
 
         Any CLI-supplied targets (``./z test <target>...``) must be a
         subset of :attr:`_SUPPORTED_TEST_TARGETS`; unknown targets are
@@ -181,10 +181,7 @@ class Bzip2Build(ZScript):
             self._run_tests_windows()
             return
 
-        if self.config.deployment_mode == "standalone":
-            self._run_functional_standalone()
-        else:
-            run(*self._make_args("test-functional"), cwd=repo_root())
+        self._run_functional_standalone()
 
     def _run_functional_standalone(self) -> None:
         """Run standalone functional tests using make_initrd.
@@ -307,15 +304,8 @@ class Bzip2Build(ZScript):
         --with-docker``). Uses make_initrd to bundle the binary with
         system daemons, and a ramfs for test input/output files.
 
-        Windows only supports standalone deployment mode. Attempting to
-        run tests in any other mode will raise an error.
+        Only the standalone deployment mode is supported.
         """
-        if self.config.deployment_mode != "standalone":
-            raise RuntimeError(
-                f"Windows tests only support standalone mode "
-                f"(got: {self.config.deployment_mode}). "
-                f"Single-process and multi-process modes are Linux-only."
-            )
         machine = self.config.machine
         sysroot = self._get_sysroot()
         sysroot_path = Path(sysroot)

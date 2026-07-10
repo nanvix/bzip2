@@ -108,51 +108,14 @@ bzip2$(EXE): bzip2.o $(STATICLIB)
 # ===========================================================================
 
 # --- Functional tests: compress/decompress roundtrip on nanvixd$(EXE) ---
+# Only standalone deployment mode is supported; the standalone functional
+# tests are driven from Python, so this target delegates to ./z.sh.
 test-functional:
 	@test -f $(PROG) || { echo "  FAIL: $(PROG) not found"; exit 1; }
 	@echo "=== bzip2 functional tests ==="
-ifeq ($(PROCESS_MODE),standalone)
 	@echo "  NOTE: Standalone functional tests are handled via ./z.sh."
 	@echo "  Delegating to: ./z.sh test test-functional"
 	@./z.sh test test-functional
-else
-	@echo "  Test 1: Compress/decompress roundtrip (sample1, -1, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample1.ref) /tmp/sample1.ref
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -1 -k -f /tmp/sample1.ref
-	@cp /tmp/sample1.ref.bz2 /tmp/sample1_rt.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_rt.bz2
-	@cmp /tmp/sample1_rt $(abspath tests/sample1.ref)
-	@echo "  PASS: sample1 roundtrip"
-	@echo "  Test 2: Compress/decompress roundtrip (sample2, -2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample2.ref) /tmp/sample2.ref
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -2 -k -f /tmp/sample2.ref
-	@cp /tmp/sample2.ref.bz2 /tmp/sample2_rt.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_rt.bz2
-	@cmp /tmp/sample2_rt $(abspath tests/sample2.ref)
-	@echo "  PASS: sample2 roundtrip"
-	@echo "  Test 3: Compress/decompress roundtrip (sample3, -3, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample3.ref) /tmp/sample3.ref
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -3 -k -f /tmp/sample3.ref
-	@cp /tmp/sample3.ref.bz2 /tmp/sample3_rt.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_rt.bz2
-	@cmp /tmp/sample3_rt $(abspath tests/sample3.ref)
-	@echo "  PASS: sample3 roundtrip"
-	@echo "  Test 4: Decompress reference (sample1.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample1.bz2) /tmp/sample1_ref.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample1_ref.bz2
-	@cmp /tmp/sample1_ref $(abspath tests/sample1.ref)
-	@echo "  PASS: sample1 decompress reference"
-	@echo "  Test 5: Decompress reference (sample2.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample2.bz2) /tmp/sample2_ref.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -d -k -f /tmp/sample2_ref.bz2
-	@cmp /tmp/sample2_ref $(abspath tests/sample2.ref)
-	@echo "  PASS: sample2 decompress reference"
-	@echo "  Test 6: Decompress reference (sample3.bz2, platform=$(PLATFORM), mode=$(PROCESS_MODE))..."
-	@cp $(abspath tests/sample3.bz2) /tmp/sample3_ref.bz2
-	@cd "$(SYSROOT_PATH)" && timeout --foreground 120 ./bin/nanvixd$(EXE) -- $(abspath bzip2$(EXE)) -ds -k -f /tmp/sample3_ref.bz2
-	@cmp /tmp/sample3_ref $(abspath tests/sample3.ref)
-	@echo "  PASS: sample3 decompress reference"
-endif
 	@echo "  PASS: bzip2 functional tests"
 
 # --- Run tests (alias for functional tests) ---
