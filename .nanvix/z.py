@@ -53,6 +53,19 @@ _MAKE_VAR_MEMORY_SIZE = "MEMORY_SIZE"
 class Bzip2Build(ZScript):
     """Build script for nanvix/bzip2."""
 
+    # Build-time headers, libraries, startup objects, and linker scripts come
+    # from the SDK. The downloaded sysroot is used only to run tests.
+    SYSROOT_REQUIRED_FILES = (
+        "bin/nanvixd.elf",
+        "bin/kernel.elf",
+        "bin/mkramfs.elf",
+    )
+    SYSROOT_REQUIRED_FILES_WINDOWS = (
+        "bin/nanvixd.exe",
+        "bin/kernel.elf",
+        "bin/mkramfs.exe",
+    )
+
     def _get_sysroot(self) -> str:
         """Return the sysroot path, or fatal if not set."""
         sysroot = self.config.get(CFG_SYSROOT, "")
