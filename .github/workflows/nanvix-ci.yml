@@ -30,7 +30,7 @@ jobs:
     with:
       platforms: '["microvm"]'
       process-modes: '["standalone"]'
-      memory-sizes: '["128mb","256mb"]'
+      memory-sizes: '["256mb"]'
       windows-matrix-exclude: '[]'
       skip-full-test-modes: '[]'
       caller-event-name: ${{ github.event_name }}
@@ -47,7 +47,7 @@ jobs:
     with:
       platforms: '["microvm"]'
       process-modes: '["standalone"]'
-      memory-sizes: '["128mb","256mb"]'
+      memory-sizes: '["256mb"]'
       windows-matrix-exclude: '[]'
       skip-full-test-modes: '[]'
       caller-event-name: 'schedule'
