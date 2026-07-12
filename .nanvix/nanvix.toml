@@ -5,6 +5,6 @@ nanvix-version = "0.20.0"
 
 [builds]
 [builds.matrix]
-platforms = ["hyperlight", "microvm"]
+platforms = ["microvm"]
 modes = ["standalone"]
 memory = ["256mb"]
