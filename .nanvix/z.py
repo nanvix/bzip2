@@ -31,12 +31,11 @@ from nanvix_zutil import (
 )
 from nanvix_zutil.helpers import InitRdArgs
 from nanvix_zutil.paths import (
-    bin_out,
+    dev_out,
     dist_dir,
-    include_out,
-    lib_out,
     nanvix_root,
     out_dir,
+    regular_out,
     repo_root,
     test_out,
 )
@@ -101,9 +100,9 @@ class Bzip2Build(ZScript):
             f"NANVIX_ROOT={translate(nanvix_root())}",
             f"OUT_DIR={translate(out_dir())}",
             f"DIST_DIR={translate(dist_dir())}",
-            f"LIB_OUT={translate(lib_out())}",
-            f"INCLUDE_OUT={translate(include_out())}",
-            f"BIN_OUT={translate(bin_out())}",
+            f"LIB_OUT={translate(dev_out() / 'lib')}",
+            f"INCLUDE_OUT={translate(dev_out() / 'include')}",
+            f"BIN_OUT={translate(regular_out() / 'bin')}",
         ]
         args.extend(targets)
         return args
@@ -130,9 +129,9 @@ class Bzip2Build(ZScript):
             "libbz2.a",
             "bzip2.elf",
             # Installed artifacts staged for `./z release` / packaging.
-            str((lib_out() / "libbz2.a").relative_to(root)),
-            str((include_out() / "bzlib.h").relative_to(root)),
-            str((bin_out() / "bzip2.elf").relative_to(root)),
+            str((dev_out() / "lib" / "libbz2.a").relative_to(root)),
+            str((dev_out() / "include" / "bzlib.h").relative_to(root)),
+            str((regular_out() / "bin" / "bzip2.elf").relative_to(root)),
         ]
         return dataclasses.replace(cfg, output_files=output_files)
 
