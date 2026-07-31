@@ -12,7 +12,6 @@ Usage:
     ./z clean                  # Remove build artifacts
 """
 
-import dataclasses
 import shutil
 import tempfile
 from pathlib import Path
@@ -77,18 +76,16 @@ class Bzip2Build(ZScript):
             )
         return sysroot
 
-    def _make_args(self, *targets: str) -> list[str]:
+    def _make_args(self, docker: DockerConfig | None, *targets: str) -> list[str]:
         """Build the common make argument list."""
         sysroot = self._get_sysroot()
         toolchain_p = TOOLCHAIN_CONTAINER_PATH
         sysroot_p = (
-            translate_path(self.docker.mounts, Path(sysroot))
-            if self.docker
-            else Path(sysroot)
+            translate_path(docker.mounts, Path(sysroot)) if docker else Path(sysroot)
         )
 
         def translate(p: Path):
-            return translate_path(self.docker.mounts, p) if self.docker else p
+            return translate_path(docker.mounts, p) if docker else p
 
         args = [
             "make",
@@ -114,20 +111,14 @@ class Bzip2Build(ZScript):
     # Docker configuration
     # ------------------------------------------------------------------
 
-    def docker_config(self, image: str) -> DockerConfig:
-        """Build Docker configuration with bzip2 output files.
+    def _docker_output_files(self) -> list[str]:
+        """Build artifacts to copy back from the container to the host
+        workspace so that ``./z test`` and ``./z release`` can find them.
 
-        Extends the base class configuration to specify which build
-        artifacts must be copied back from the container to the host
-        workspace after a Windows Docker build.
+        Paths are relative to the workspace mount root (i.e. repo_root()).
         """
-        cfg = super().docker_config(image)
-        # Build artifacts produced inside the container that must be copied
-        # back to the host workspace so that `./z test` and `./z release`
-        # can find them. Paths are relative to the workspace mount root
-        # (i.e. repo_root()).
         root = repo_root()
-        output_files = [
+        return [
             # In-tree build artifacts (legacy locations used by tests).
             "libbz2.a",
             "bzip2.elf",
@@ -136,7 +127,6 @@ class Bzip2Build(ZScript):
             str((dev_out() / "include" / "bzlib.h").relative_to(root)),
             str((regular_out() / "bin" / "bzip2.elf").relative_to(root)),
         ]
-        return dataclasses.replace(cfg, output_files=output_files)
 
     # ------------------------------------------------------------------
     # Setup
@@ -150,9 +140,14 @@ class Bzip2Build(ZScript):
     # Build
     # ------------------------------------------------------------------
 
-    def build(self) -> None:
+    def build(self, docker: DockerConfig) -> None:
         """Cross-compile libbz2.a and bzip2.elf for Nanvix."""
-        run(*self._make_args("all", "bzip2.elf"), cwd=repo_root(), docker=self.docker)
+        docker.output_files = self._docker_output_files()
+        run(
+            *self._make_args(docker, "all", "bzip2.elf"),
+            cwd=repo_root(),
+            docker=docker,
+        )
         # Stage bzip2.elf into test_out() so the windows-test artifact
         # upload in nanvix/workflows@v2.3.0 picks it up (upload glob is
         # `.nanvix/out/test/**/*.{elf,so}`). The Makefile installs to
